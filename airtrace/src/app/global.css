@@ -1,0 +1,206 @@
+/* --- Global Variables (AirTrace Theme) --- */
+:root {
+  /* Primary Brand Colors */
+  --primary-color: #0C2B4E;       /* Deep Navy */
+  --secondary-color: #205E8B;     /* Lighter Blue */
+  
+  /* Text & Backgrounds */
+  --background: #f4f7f6;
+  --foreground: #171717;
+  --text-light: #ffffff;
+  --text-dark: #333333;
+}
+
+/* Dark Mode Support (Optional) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+/* --- Resets & Base Styles --- */
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+/* --- LOGIN & SIGNUP STYLES (The Split Layout) --- */
+
+.auth-container {
+  display: grid;
+  grid-template-columns: 1fr; /* Stacked on mobile */
+  min-height: 100vh;
+  width: 100%;
+}
+
+/* Left Side: Branding/Map Image */
+.auth-branding {
+  background-color: var(--primary-color);
+  color: var(--text-light);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 4rem;
+  /* We add a dark overlay so text is readable */
+  background-image: linear-gradient(rgba(12, 43, 78, 0.85), rgba(12, 43, 78, 0.85)), url('https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?q=80&w=2831&auto=format&fit=crop');
+  background-size: cover;
+  background-position: center;
+}
+
+.auth-branding h1 {
+  font-size: 3.5rem;
+  margin: 0 0 1rem 0;
+  font-weight: 700;
+  letter-spacing: -1px;
+}
+
+.auth-branding p {
+  font-size: 1.25rem;
+  opacity: 0.9;
+  line-height: 1.6;
+}
+
+/* Right Side: Form Area */
+.auth-form-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem;
+  background-color: var(--background);
+}
+
+.auth-form-box {
+  background: #ffffff; /* Always white card for contrast */
+  color: #333;
+  padding: 2.5rem;
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  width: 100%;
+  max-width: 480px;
+}
+
+.auth-form-box h2 {
+  color: var(--primary-color);
+  text-align: center;
+  margin-bottom: 2rem;
+  font-size: 1.8rem;
+}
+
+/* --- Form Elements --- */
+.form-group {
+  margin-bottom: 1.25rem;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-dark);
+}
+
+.form-input, .form-select, .form-textarea {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: all 0.2s;
+  box-sizing: border-box;
+  background-color: #fff;
+}
+
+.form-input:focus, .form-select:focus, .form-textarea:focus {
+  outline: none;
+  border-color: var(--secondary-color);
+  box-shadow: 0 0 0 3px rgba(32, 94, 139, 0.1);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.auth-button {
+  width: 100%;
+  padding: 14px;
+  margin-top: 1rem;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.auth-button:hover {
+  background-color: var(--secondary-color);
+}
+
+.auth-button:disabled {
+  background-color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.auth-footer {
+  margin-top: 1.5rem;
+  text-align: center;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.auth-footer a {
+  color: var(--primary-color);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* --- Table Styles (From your request) --- */
+.table-base {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.table-base th {
+  background-color: #f1f5f9;
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 2px solid #e2e8f0;
+  color: var(--primary-color);
+}
+
+.table-base td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.table-base tr:hover {
+  background-color: #f8fafc;
+}
+
+/* --- Responsive Split --- */
+@media (min-width: 900px) {
+  .auth-container {
+    grid-template-columns: 1.2fr 1fr; /* Branding gets slightly more space */
+  }
+}
