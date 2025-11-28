@@ -1,9 +1,9 @@
 // src/app/map/MapPage.jsx
 import React from 'react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css'; // <--- CRITICAL: Fixes the broken map tiles
+import 'leaflet/dist/leaflet.css'; 
 
-// Fix for missing marker icons in React Leaflet
+
 import L from 'leaflet';
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
@@ -31,7 +31,7 @@ export default function MapPage() {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* A simple marker to prove it works */}
+        {/* A Sample Marker at Kuala Lumpur */}
         <Marker position={position}>
           <Popup>
             Start Point: Kuala Lumpur <br /> Air Quality: Moderate.
