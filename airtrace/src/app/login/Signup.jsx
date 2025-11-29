@@ -6,25 +6,38 @@ import "../global.css";
 // Import Firestore
 import { db } from "../../contexts/firebase";
 import { doc, setDoc } from "firebase/firestore";
+import AddressMapSelector from "../../components/AddressMapSelector";
 
 export default function Signup() {
   const usernameRef = useRef();
   const emailRef = useRef();
   const passwordRef = useRef();
   const passwordConfirmRef = useRef();
-  const addressRef = useRef();
   const diseaseRef = useRef(); 
 
   const { signup } = useAuth();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  
+  // State for address and coordinates
+  const [selectedAddress, setSelectedAddress] = useState("");
+  const [selectedCoordinates, setSelectedCoordinates] = useState(null);
 
   async function handleSubmit(e) {
     e.preventDefault();
 
+    // Validation
     if (passwordRef.current.value !== passwordConfirmRef.current.value) {
       return setError("Passwords do not match");
+    }
+
+    if (passwordRef.current.value.length < 6) {
+      return setError("Password must be at least 6 characters");
+    }
+
+    if (!selectedCoordinates || !selectedAddress) {
+      return setError("Please select your address location on the map");
     }
 
     try {
@@ -35,11 +48,13 @@ export default function Signup() {
       const userCredential = await signup(emailRef.current.value, passwordRef.current.value);
       const user = userCredential.user;
 
-      // Save the extra data to Firestore
+      // Save the extra data to Firestore with coordinates
       await setDoc(doc(db, "users", user.uid), {
         username: usernameRef.current.value,
         email: emailRef.current.value,
-        home_address: addressRef.current.value,    
+        home_address: selectedAddress,    
+        latitude: selectedCoordinates[0],
+        longitude: selectedCoordinates[1],
         disease: diseaseRef.current.value,       
         createdAt: new Date().toISOString()
       });
@@ -52,6 +67,11 @@ export default function Signup() {
     }
     setLoading(false);
   }
+
+  const handleLocationSelect = (coords, address) => {
+    setSelectedCoordinates(coords);
+    setSelectedAddress(address);
+  };
 
   return (
     <div className="auth-container">
@@ -91,8 +111,11 @@ export default function Signup() {
             </div>
 
             <div className="form-group">
-                <label className="form-label">Home Address</label>
-                <textarea ref={addressRef} className="form-textarea" placeholder="Enter your full address..." required></textarea>
+                <AddressMapSelector 
+                  onLocationSelect={handleLocationSelect}
+                  initialAddress={selectedAddress}
+                  initialCoords={selectedCoordinates}
+                />
             </div>
 
             <div className="form-group">

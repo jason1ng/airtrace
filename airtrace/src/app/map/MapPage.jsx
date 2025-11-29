@@ -9,6 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import RoutingControl from './RoutingControl';
 import WindLayer from './WindLayer';
 import { fetchAirQualityData, getAQIColor } from '../../services/aqicnService';
+import AQINotification from '../../components/AQINotification';
 
 // --- ICONS ---
 // Fix for custom marker icons using external URLs
@@ -143,6 +144,9 @@ export default function MapPage() {
 
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative", display: "flex", flexDirection: "row" }}>
+      
+      {/* AQI Notification Component */}
+      <AQINotification />
 
       {/* --- MAP (Left) --- */}
       <div style={{ flex: 1, height: "100%", position: "relative" }}>

@@ -13,10 +13,35 @@ export default function Login() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    
+    // Validation
+    const email = emailRef.current.value.trim();
+    const password = passwordRef.current.value;
+    
+    if (!email) {
+      setError("Email address is required");
+      return;
+    }
+    
+    if (!email.includes("@") || !email.includes(".")) {
+      setError("Please enter a valid email address");
+      return;
+    }
+    
+    if (!password) {
+      setError("Password is required");
+      return;
+    }
+    
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
+    
     try {
       setError("");
       setLoading(true);
-      await login(emailRef.current.value, passwordRef.current.value);
+      await login(email, password);
       navigate("/map");
     } catch (err) {
       setError("Failed to log in: " + err.message);
