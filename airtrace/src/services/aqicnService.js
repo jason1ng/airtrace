@@ -6,7 +6,7 @@ const BASE_URL = "https://api.waqi.info";
 const API_TOKEN = "85c000be83b20ff3e5b80d4f4e82afc3b1615bb2"; 
 
 // Approximate map bounds for a box covering Malaysia (minLat, minLng, maxLat, maxLng)
-const MALAYSIA_BOUNDS = "-2,99,8,119"; 
+//const MALAYSIA_BOUNDS = "-2,99,8,119"; 
 
 /**
  * Fetches air quality data from the AQICN Map Bounds API.
@@ -15,7 +15,7 @@ export const fetchAirQualityData = async () => {
   try {
     const response = await axios.get(`${BASE_URL}/map/bounds/`, {
       params: {
-        latlng: MALAYSIA_BOUNDS,
+        latlng: "-90,-180,90,180",
         token: API_TOKEN
       }
     });
