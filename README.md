@@ -48,6 +48,8 @@ The application combines multiple data sources to provide a comprehensive air qu
 This project is built upon the work of several excellent open-source libraries and utilizes data from external API providers. We extend our gratitude to them:
 
 ### Data & Services
+* **Base Map Tiles:** Provided by **[OpenStreetMap (OSM)](https://www.openstreetmap.org/copyright)**. Mandatory in-app attribution: © OpenStreetMap contributors.
+* **Traffic Layer:** The traffic overlay is provided by the **[Google Maps Platform](https://developers.google.com/maps/documentation/tile)**. Mandatory in-app attribution: © Google.
 * **Air Quality Data:** Provided by the **[World Air Quality Index Project (AQICN)](https://aqicn.org/)**.
 * **Wind & Weather Data:** Forecasts and wind velocity data provided by **[OpenWeatherMap](https://openweathermap.org/)**.
 * **AI Assistant:** The conversational AI is powered by **[Sea-Lion AI](https://sea-lion.ai/)**.
