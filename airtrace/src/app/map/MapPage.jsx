@@ -9,6 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import RoutingControl from './RoutingControl';
 import WindLayer from './WindLayer';
 import { fetchAirQualityData, getAQIColor } from '../../services/aqicnService';
+import { fetchSealionResponse } from '../../services/sealionService';
 
 import {
   MapPin, Flag, Navigation,
@@ -193,21 +194,27 @@ export default function MapPage() {
     scrollToBottom();
   }, [chatMessages]);
 
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!inputMessage.trim()) return;
 
     // Add user message
     const userMsg = { type: 'user', text: inputMessage };
-    const userInput = inputMessage;
-    setChatMessages(prev => [...prev, userMsg]);
+    setChatMessages((prev) => [...prev, userMsg]);
     setInputMessage('');
 
-    // Simulate AI response (you can replace this with actual AI API call)
-    setTimeout(() => {
-      const botResponse = generateAIResponse(userInput);
-      setChatMessages(prev => [...prev, { type: 'bot', text: botResponse }]);
-    }, 500);
+    // Add typing indicator
+    const typingIndicator = { type: 'bot', text: 'Typing...' };
+    setChatMessages((prev) => [...prev, typingIndicator]);
+
+    const result = await fetchSealionResponse(userMsg.text);
+
+    // Replace typing indicator with actual response
+    setChatMessages((prev) => {
+      const updatedMessages = [...prev];
+      updatedMessages.pop(); // Remove typing indicator
+      return [...updatedMessages, { type: 'bot', text: result.reply }];
+    });
   };
 
   const generateAIResponse = (userMessage) => {
