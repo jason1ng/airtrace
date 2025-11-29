@@ -4,10 +4,8 @@ import 'leaflet/dist/leaflet.css';
 
 // Services
 import { fetchAirQualityData, getAQIColor } from '../../services/aqicnService';
-import { windyLayers } from '../../services/windyService';
 
 // Destructure LayersControl for cleaner code
-const { BaseLayer, Overlay } = LayersControl;
 
 export default function MapPage() {
   const [centerPos] = useState([3.1319, 101.6841]); // Centered on Kuala Lumpur for better demo
