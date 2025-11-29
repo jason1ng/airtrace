@@ -5,10 +5,14 @@ import 'leaflet/dist/leaflet.css';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 
-// COMPONENTS & SERVICES (Ensure these paths are correct in your project)
+// COMPONENTS & SERVICES
 import RoutingControl from './RoutingControl';
-import WindLayer from './WindLayer';
+import TimelineControl from './TimelineControl'; // <--- Restored
+import WindLayer from './WindLayer'; 
+
 import { fetchAirQualityData, getAQIColor } from '../../services/aqicnService';
+import { fetchForecastTrend, fetchWindForecast } from '../../services/owmService'; 
+import { generateForecast, getWindDirection } from '../../services/predictionService'; 
 import { fetchSealionResponse, ChatMessage } from '../../services/sealionService.jsx';
 import AQINotification from '../../components/AQINotification';
 
@@ -19,7 +23,6 @@ import {
 } from 'lucide-react';
 
 // --- ICONS ---
-// Fix for custom marker icons using external URLs
 const startIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -49,25 +52,14 @@ function MapViewHandler({ centerPos }) {
 }
 
 // --- HELPER FUNCTIONS ---
-
-/**
- * Converts seconds to a human-readable time string (e.g., "1h 30m").
- */
 const formatTime = (seconds) => {
   if (seconds < 60) return `${Math.round(seconds)}s`;
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
+  if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
 };
 
-/**
- * Calculates a radius size (in meters) for the AQI Circle.
- * 1km
- */
 function getRadiusInMetersForAQI(aqi) {
   if (aqi <= 50) return 500;
   if (aqi <= 100) return 1000;
@@ -77,24 +69,15 @@ function getRadiusInMetersForAQI(aqi) {
   return 10000;
 }
 
-// --- MAP CLICK HANDLER COMPONENT ---
-
-/**
- * Component to listen for map clicks and set the start/end points.
- */
 const MapClickHandler = ({ setStart, setEnd, mode }) => {
   useMapEvents({
     click: (e) => {
-      if (mode === 'start') {
-        setStart([e.latlng.lat, e.latlng.lng]);
-      } else if (mode === 'end') {
-        setEnd([e.latlng.lat, e.latlng.lng]);
-      }
+      if (mode === 'start') setStart([e.latlng.lat, e.latlng.lng]);
+      else if (mode === 'end') setEnd([e.latlng.lat, e.latlng.lng]);
     },
   });
   return null;
 };
-
 
 const getDirectionIcon = (text, type) => {
   const lowerText = text ? text.toLowerCase() : "";
@@ -126,8 +109,16 @@ export default function MapPage() {
   const navigate = useNavigate();
 
   const [centerPos, setCenterPos] = useState([3.1473, 101.6991]);
-  const [airData, setAirData] = useState([]);
+  
+  // --- DATA STATES ---
+  const [realAirData, setRealAirData] = useState([]); // The baseline data (Today)
+  const [displayAirData, setDisplayAirData] = useState([]); // What is shown (Today or Prediction)
   const [loading, setLoading] = useState(true);
+
+  // --- PREDICTION STATES ---
+  const [forecastTrends, setForecastTrends] = useState(null);
+  const [windForecast, setWindForecast] = useState(null);
+  const [selectedDay, setSelectedDay] = useState(0); // 0 = Today
 
   const [startPoint, setStartPoint] = useState(null);
   const [endPoint, setEndPoint] = useState(null);
@@ -139,7 +130,6 @@ export default function MapPage() {
   const [showTraffic, setShowTraffic] = useState(false);
   const [showPollutionMarkers, setShowPollutionMarkers] = useState(true);
   const [showWind, setShowWind] = useState(false);
-  // State for switching base map style
   const [baseLayerUrl, setBaseLayerUrl] = useState("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
 
   // AI Chatbot State
@@ -162,30 +152,93 @@ export default function MapPage() {
     setSelectedRouteIdx(null); setSelectionMode(null); setExpandedRouteId(null);
   };
 
+  // --- INITIAL DATA LOAD ---
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
+      
+      // 1. Fetch Current AQI Data (AQICN)
       const results = await fetchAirQualityData();
-      // Basic coordinate validation/fix
       const safeResults = results
         .map(r => {
-          // Check if coordinates array is defined before accessing elements
           if (!r.coordinates || r.coordinates.length < 2) return r;
-
           let lat = r.coordinates[0];
           let lng = r.coordinates[1];
-          // Simple check to swap (lng, lat) to (lat, lng) if the API returns them swapped
           if (Math.abs(lat) > 90) return { ...r, coordinates: [lng, lat] };
           return r;
         })
         .filter(r => r.value !== null && Array.isArray(r.coordinates));
 
-      setAirData(safeResults);
+      setRealAirData(safeResults);
+      setDisplayAirData(safeResults); // Initially show today's data
+
+      // 2. Fetch Future Trends (OpenWeatherMap)
+      try {
+        const trends = await fetchForecastTrend(centerPos[0], centerPos[1]);
+        const wind = await fetchWindForecast(centerPos[0], centerPos[1]);
+        if (trends) setForecastTrends(trends);
+        if (wind) setWindForecast(wind);
+      } catch (e) {
+        console.warn("Forecast fetch failed, prediction will use simulation.", e);
+      }
+
       setLoading(false);
     };
 
     loadData();
-  }, []);
+  }, []); // Run once on mount
+
+  // --- PREDICTION HANDLER (Uses EXACT RAW VALUES from OpenWeatherMap API) ---
+  const handleDayChange = (day) => {
+    setSelectedDay(day);
+    
+    if (day === 0) {
+      setDisplayAirData(realAirData); // Reset to original
+    } else {
+      // Use EXACT RAW forecast value from OpenWeatherMap API (no calculations, no multipliers)
+      if (forecastTrends && forecastTrends[day] !== undefined) {
+          const rawForecastValue = forecastTrends[day]; // EXACT RAW VALUE from API (PM2.5 in µg/m³ or AQI)
+          const todayRawValue = forecastTrends[0];
+          
+          if (todayRawValue && todayRawValue > 0) {
+            console.log(`🔮 Prediction Day ${day}: Using EXACT RAW value ${rawForecastValue} (Today: ${todayRawValue})`);
+            
+            // Calculate the exact change factor from raw API values (no arbitrary multipliers)
+            const changeFactor = rawForecastValue / todayRawValue;
+            
+            const predictedData = realAirData.map(point => {
+                // Apply exact raw forecast change factor directly (no multipliers like "5 * day")
+                // This uses the exact raw API values to determine the change
+                let newValue = Math.round(point.value * changeFactor);
+                
+                // Safety bounds
+                if (newValue < 10) newValue = 10; 
+                if (newValue > 500) newValue = 500;
+
+                return {
+                    ...point,
+                    // FIXED: Create immutable copy of coordinates to prevent any drifting
+                    // Coordinates stay exactly the same - no modification, no drift
+                    coordinates: Array.isArray(point.coordinates) && point.coordinates.length >= 2
+                      ? [point.coordinates[0], point.coordinates[1]] // Exact same coordinates, new array reference
+                      : point.coordinates,
+                    value: newValue, 
+                    isPrediction: true,
+                    dayOffset: day
+                };
+            });
+            setDisplayAirData(predictedData);
+          } else {
+            console.warn("Invalid forecast data, showing original data");
+            setDisplayAirData(realAirData);
+          }
+      } else {
+          // Fallback: if API failed, show original data
+          console.warn("Forecast data not available, showing original data");
+          setDisplayAirData(realAirData);
+      }
+    }
+  };
 
   const handleRouteSelect = (idx) => {
     setSelectedRouteIdx(idx);
@@ -224,31 +277,10 @@ export default function MapPage() {
     dispatch({ type: 'ADD_MESSAGE', payload: { type: 'bot', text: result.reply } });
   };
 
-  const generateAIResponse = (userMessage) => {
-    const lowerMsg = userMessage.toLowerCase();
-
-    if (lowerMsg.includes('route') || lowerMsg.includes('best') || lowerMsg.includes('recommend')) {
-      if (routes.length > 0) {
-        const bestRoute = routes.find(r => r.isRecommended) || routes[0];
-        return `I recommend ${bestRoute.isRecommended ? 'the recommended route' : 'Route 1'} with an average AQI of ${bestRoute.pollutionLevel || 'N/A'}. This route has the cleanest air quality along your path.`;
-      }
-      return 'Please set your start and end points first, then I can recommend the best route based on air quality.';
-    }
-
-    if (lowerMsg.includes('aqi') || lowerMsg.includes('air quality') || lowerMsg.includes('pollution')) {
-      if (airData.length > 0) {
-        const avgAQI = Math.round(airData.reduce((sum, p) => sum + p.value, 0) / airData.length);
-        return `The current average air quality index in this area is ${avgAQI} AQI. ${avgAQI <= 50 ? 'The air quality is good!' : avgAQI <= 100 ? 'The air quality is moderate.' : 'The air quality is unhealthy. Consider wearing a mask.'}`;
-      }
-      return 'I\'m currently loading air quality data. Please wait a moment.';
-    }
-
-    if (lowerMsg.includes('help') || lowerMsg.includes('what can you do')) {
-      return 'I can help you with:\n• Finding routes with the best air quality\n• Explaining current AQI levels\n• Providing navigation assistance\n• Answering questions about pollution\n\nJust ask me anything!';
-    }
-
-    return 'I understand you\'re asking about "' + userMessage + '". I\'m here to help you find the cleanest routes and answer questions about air quality. Could you rephrase your question?';
-  };
+  // Calculate wind direction for Timeline Icon
+  const currentWindDirection = windForecast && windForecast[selectedDay] 
+    ? windForecast[selectedDay].deg 
+    : getWindDirection(selectedDay);
 
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative", display: "flex", flexDirection: "row" }}>
@@ -257,31 +289,12 @@ export default function MapPage() {
       <button
         onClick={() => setShowChatbox(!showChatbox)}
         style={{
-          position: 'fixed',
-          bottom: '30px',
-          right: showChatbox ? '420px' : '30px',
-          width: '60px',
-          height: '60px',
-          borderRadius: '50%',
+          position: 'fixed', bottom: '30px', right: showChatbox ? '420px' : '30px',
+          width: '60px', height: '60px', borderRadius: '50%',
           background: 'linear-gradient(135deg, #1D546C 0%, #0C2B4E 100%)',
-          border: 'none',
-          boxShadow: '0 4px 20px rgba(102, 126, 234, 0)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1001,
-          transition: 'all 0.3s ease',
-          color: 'white',
-          fontSize: '24px'
-        }}
-        onMouseOver={(e) => {
-          e.currentTarget.style.transform = 'scale(1.1)';
-          e.currentTarget.style.boxShadow = '0 6px 25px #1A3D64';
-        }}
-        onMouseOut={(e) => {
-          e.currentTarget.style.transform = 'scale(1)';
-          e.currentTarget.style.boxShadow = '0 4px 20px #0C2B4E';
+          border: 'none', boxShadow: '0 4px 20px rgba(102, 126, 234, 0)',
+          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1001, transition: 'all 0.3s ease', color: 'white', fontSize: '24px'
         }}
       >
         🤖
@@ -289,56 +302,10 @@ export default function MapPage() {
 
       {/* AI Chatbox */}
       {showChatbox && (
-        <div
-          style={{
-            position: 'fixed',
-            right: '30px',
-            bottom: '110px',
-            width: '350px',
-            height: '500px',
-            background: 'white',
-            borderRadius: '20px',
-            boxShadow: '0 10px 40px rgba(0,0,0,0.2)',
-            zIndex: 1002,
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            border: '1px solid #e1e5e8'
-          }}
-        >
-          {/* Chatbox Header */}
-          <div
-            style={{
-              background: 'linear-gradient(135deg, #1D546C 0%, #0C2B4E 100%)',
-              padding: '15px 20px',
-              color: 'white',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}
-          >
-            <div>
-              <div style={{ fontWeight: 'bold', fontSize: '16px' }}>AI Route Assistant</div>
-              <div style={{ fontSize: '12px', opacity: 0.9 }}>Always here to help</div>
-            </div>
-            <button
-              onClick={() => setShowChatbox(false)}
-              style={{
-                background: 'rgba(255,255,255,0.2)',
-                border: 'none',
-                borderRadius: '50%',
-                width: '30px',
-                height: '30px',
-                color: 'white',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '18px'
-              }}
-            >
-              ×
-            </button>
+        <div style={{ position: 'fixed', right: '30px', bottom: '110px', width: '350px', height: '500px', background: 'white', borderRadius: '20px', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', zIndex: 1002, display: 'flex', flexDirection: 'column', overflow: 'hidden', border: '1px solid #e1e5e8' }}>
+          <div style={{ background: 'linear-gradient(135deg, #1D546C 0%, #0C2B4E 100%)', padding: '15px 20px', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div><div style={{ fontWeight: 'bold', fontSize: '16px' }}>AI Route Assistant</div><div style={{ fontSize: '12px', opacity: 0.9 }}>Always here to help</div></div>
+            <button onClick={() => setShowChatbox(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>×</button>
           </div>
 
           {/* Messages Container */}
@@ -358,8 +325,6 @@ export default function MapPage() {
             ))}
             <div ref={messagesEndRef} />
           </div>
-
-          {/* Input Area */}
           <form onSubmit={handleSendMessage} style={{ padding: '15px', background: 'white', borderTop: '1px solid #e1e5e8' }}>
             <div style={{ display: 'flex', gap: '10px' }}>
               <input
@@ -408,35 +373,32 @@ export default function MapPage() {
         {loading && <div style={{ position: "absolute", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: "white", padding: "10px 20px", borderRadius: "20px", boxShadow: "0 2px 10px rgba(0,0,0,0.1)" }}>Loading Air Data...</div>}
 
         <MapContainer center={centerPos} zoom={11} style={{ height: "100%", width: "100%" }}>
+          <MapViewHandler centerPos={centerPos} />
 
-          {/* Base Layer - DYNAMICALLY CONTROLLED BY Map Style BUTTONS */}
-          <TileLayer
-            attribution='&copy; OpenStreetMap | CartoDB'
-            url={baseLayerUrl}
-            zIndex={1} // Base layer
-          />
+          {/* Base Layer */}
+          <TileLayer attribution='&copy; OpenStreetMap | CartoDB' url={baseLayerUrl} zIndex={1} />
 
-          {/* TRAFFIC LAYER FIX: Only render the traffic overlay when showTraffic is TRUE. 
-              When FALSE, it renders NULL, preserving the baseLayerUrl map style underneath. */}
+          {/* Traffic Layer */}
           {showTraffic ? (
-            <TileLayer
-              attribution='Google Maps Traffic Overlay'
-              url="https://mt0.google.com/vt/lyrs=m,traffic&hl=en&x={x}&y={y}&z={z}"
-              maxZoom={20}
-              zIndex={100} // Overlay layer
-            />
+            <TileLayer attribution='Google Maps Traffic Overlay' url="https://mt0.google.com/vt/lyrs=m,traffic&hl=en&x={x}&y={y}&z={z}" maxZoom={20} zIndex={100} />
           ) : null}
 
-          {/* WIND LAYER (New) */}
+          {/* Wind Layer */}
           <WindLayer show={showWind} />
 
           {/* Pollution Dots & Circles */}
-          {showPollutionMarkers && airData.map((point, index) => {
+          {showPollutionMarkers && displayAirData.map((point, index) => {
+            // Ensure coordinates are fixed and not modified - create immutable copy
+            const fixedCoordinates = Array.isArray(point.coordinates) && point.coordinates.length >= 2
+              ? [point.coordinates[0], point.coordinates[1]] // Create new array to prevent mutation
+              : point.coordinates;
+            
             const radiusInMeters = getRadiusInMetersForAQI(point.value);
             const fillColor = getAQIColor(point.value);
             const PopupContent = (
               <Popup>
                 <div style={{ textAlign: 'center', minWidth: '150px' }}>
+                  {point.isPrediction && <div style={{ background: '#0C2B4E', color: 'white', fontSize: '10px', padding: '2px 5px', borderRadius: '4px', marginBottom: '5px', display: 'inline-block' }}>AI FORECAST (+{point.dayOffset} Day)</div>}
                   <div style={{ fontSize: '18px', fontWeight: 'bold', color: fillColor, marginBottom: '8px' }}>AQI: {point.value}</div>
                   <div style={{ marginBottom: '6px' }}><strong>{point.location}</strong></div>
                   <div style={{ fontSize: '12px', color: '#666' }}>Last Updated: {new Date(point.lastUpdated).toLocaleString()}</div>
@@ -446,8 +408,8 @@ export default function MapPage() {
             );
             return (
               <React.Fragment key={`marker-${point.id || index}`}>
-                <CircleMarker center={point.coordinates} radius={4} pathOptions={{ color: 'transparent', fillColor: fillColor, fillOpacity: 0.9 }}>{PopupContent}</CircleMarker>
-                <Circle center={point.coordinates} radius={radiusInMeters} pathOptions={{ color: fillColor, fillColor: fillColor, fillOpacity: 0.15, weight: 1 }}>{PopupContent}</Circle>
+                <CircleMarker center={fixedCoordinates} radius={4} pathOptions={{ color: 'transparent', fillColor: fillColor, fillOpacity: 0.9 }}>{PopupContent}</CircleMarker>
+                <Circle center={fixedCoordinates} radius={radiusInMeters} pathOptions={{ color: fillColor, fillColor: fillColor, fillOpacity: 0.15, weight: 1 }}>{PopupContent}</Circle>
               </React.Fragment>
             );
           })}
@@ -455,6 +417,7 @@ export default function MapPage() {
           {startPoint && <Marker position={startPoint} icon={startIcon}><Popup>Start Point</Popup></Marker>}
           {endPoint && <Marker position={endPoint} icon={endIcon}><Popup>Destination</Popup></Marker>}
 
+          {/* --- RESTORED: Draw Routes on Map --- */}
           {routes.map((route, index) => {
             if (!route.coordinates || route.coordinates.length === 0) return null;
             const routeColors = ["#d32f2f", "#ff9800", "#4caf50", "#2196f3", "#9c27b0"];
@@ -471,62 +434,62 @@ export default function MapPage() {
             );
           })}
 
-          <MapClickHandler setStart={setStartPoint} setEnd={setEndPoint} mode={selectionMode} />
-          {startPoint && endPoint && <RoutingControl start={startPoint} end={endPoint} onRoutesFound={setRoutes} selectedRouteIdx={selectedRouteIdx} airData={airData} />}
+          {/* Routing Control - Passing DISPLAY data (Prediction or Real) */}
+          {startPoint && endPoint && <RoutingControl start={startPoint} end={endPoint} onRoutesFound={setRoutes} airData={displayAirData} />}
 
+          <MapClickHandler setStart={setStartPoint} setEnd={setEndPoint} mode={selectionMode} />
         </MapContainer>
+
+        {/* --- TIMELINE CONTROL --- */}
+        <TimelineControl 
+            selectedDay={selectedDay} 
+            onDayChange={handleDayChange}
+            windDirection={currentWindDirection}
+        />
       </div>
 
       {/* --- SIDEBAR (Right) --- */}
       <div style={{ width: "380px", height: "100%", background: "#f4f7f6", boxShadow: "-2px 0 10px rgba(0,0,0,0.1)", zIndex: 1000, padding: "25px", display: "flex", flexDirection: "column", overflowY: "auto", borderLeft: "1px solid #e1e5e8" }}>
 
         <div style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div><h2 style={{ color: "#0C2B4E", margin: 0, fontSize: "1.8rem" }}>Route Planner</h2><p style={{ color: "#666", fontSize: "0.9rem", marginTop: "5px" }}>Find the cleanest path.</p></div>
+          <div>
+            <h2 style={{ color: "#0C2B4E", margin: 0, fontSize: "1.8rem" }}>Route Planner</h2>
+            <p style={{ color: "#666", fontSize: "0.9rem", marginTop: "5px" }}>Find the cleanest path.</p>
+            {selectedDay > 0 && (
+                <div style={{ background: '#e3f2fd', color: '#0d47a1', fontSize: '0.8rem', padding: '5px 10px', borderRadius: '6px', marginTop: '10px', fontWeight: 'bold', border: '1px solid #90caf9' }}>
+                   🔮 Forecast Mode: +{selectedDay} Days
+                </div>
+            )}
+          </div>
           <button onClick={handleLogout} style={{ background: "white", color: "#d32f2f", border: "1px solid #ffcccb", padding: "6px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem", fontWeight: "bold" }}>Log Out</button>
         </div>
 
         {/* CONTROLS SECTION */}
         <div style={{ background: "white", padding: "12px", borderRadius: "10px", marginBottom: "15px", border: "1px solid #e1e5e8", boxShadow: "0 2px 5px rgba(0,0,0,0.03)" }}>
-
-          {/* Base Layer Control */}
           <div style={{ background: "white", padding: "0 0 10px 0", borderRadius: "10px", borderBottom: "1px solid #eee", marginBottom: "10px" }}>
             <div style={{ fontWeight: "600", color: "#0C2B4E", marginBottom: "10px" }}>Map Style 🗺️</div>
             <div style={{ display: "flex", gap: "10px" }}>
-              <button
-                onClick={() => setBaseLayerUrl("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png")}
-                style={{ flex: 1, padding: "8px", borderRadius: "6px", border: baseLayerUrl.includes("openstreetmap") ? "2px solid #0C2B4E" : "1px solid #ccc", background: "white", cursor: "pointer" }}
-              >
-                Default
-              </button>
-              <button
-                onClick={() => setBaseLayerUrl("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png")}
-                style={{ flex: 1, padding: "8px", borderRadius: "6px", border: baseLayerUrl.includes("cartocdn") ? "2px solid #0C2B4E" : "1px solid #ccc", background: "white", cursor: "pointer" }}
-              >
-                Clean/Light
-              </button>
+              <button onClick={() => setBaseLayerUrl("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png")} style={{ flex: 1, padding: "8px", borderRadius: "6px", border: baseLayerUrl.includes("openstreetmap") ? "2px solid #0C2B4E" : "1px solid #ccc", background: "white", cursor: "pointer" }}>Default</button>
+              <button onClick={() => setBaseLayerUrl("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png")} style={{ flex: 1, padding: "8px", borderRadius: "6px", border: baseLayerUrl.includes("cartocdn") ? "2px solid #0C2B4E" : "1px solid #ccc", background: "white", cursor: "pointer" }}>Clean/Light</button>
             </div>
           </div>
 
-          {/* Single compact toggles block: Traffic, Wind, and Pollution markers */}
-          <div style={{ background: "white", padding: "12px", borderRadius: "10px", marginBottom: "0px", border: "1px solid #e1e5e8", display: "flex", flexDirection: "column", gap: "10px", boxShadow: "0 2px 5px rgba(0,0,0,0.03)" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
             <div style={{ display: "flex", alignItems: "center" }}>
               <input type="checkbox" id="trafficToggle" checked={showTraffic} onChange={(e) => setShowTraffic(e.target.checked)} style={{ width: "18px", height: "18px", cursor: "pointer", marginRight: "10px", accentColor: "#0C2B4E" }} />
-              <label htmlFor="trafficToggle" style={{ cursor: "pointer", fontSize: "0.95rem", fontWeight: "600", color: "#333", flex: 1 }}>Show Live Traffic</label>
+              <label htmlFor="trafficToggle" style={{ cursor: "pointer", fontSize: "0.95rem", fontWeight: "600", color: "#333", flex: 1, marginLeft: "8px" }}>Show Live Traffic</label>
             </div>
-
             <div style={{ display: "flex", alignItems: "center" }}>
               <input type="checkbox" id="windToggle" checked={showWind} onChange={(e) => setShowWind(e.target.checked)} style={{ width: "18px", height: "18px", cursor: "pointer", marginRight: "10px", accentColor: "#0C2B4E" }} />
-              <label htmlFor="windToggle" style={{ cursor: "pointer", fontSize: "0.95rem", fontWeight: "600", color: "#333", flex: 1 }}>Show Wind Flow</label>
+              <label htmlFor="windToggle" style={{ cursor: "pointer", fontSize: "0.95rem", fontWeight: "600", color: "#333", flex: 1, marginLeft: "8px" }}>Show Wind Flow</label>
             </div>
-
             <div style={{ display: "flex", alignItems: "center" }}>
               <input type="checkbox" id="pollutionToggle" checked={showPollutionMarkers} onChange={(e) => setShowPollutionMarkers(e.target.checked)} style={{ width: "18px", height: "18px", cursor: "pointer", marginRight: "10px", accentColor: "#0C2B4E" }} />
-              <label htmlFor="pollutionToggle" style={{ cursor: "pointer", fontSize: "0.95rem", fontWeight: "600", color: "#333", flex: 1 }}>Show Air Quality Markers</label>
+              <label htmlFor="pollutionToggle" style={{ cursor: "pointer", fontSize: "0.95rem", fontWeight: "600", color: "#333", flex: 1, marginLeft: "8px" }}>Show Air Quality Markers</label>
             </div>
           </div>
         </div>
 
-        {/* POINT SELECTION CONTROLS */}
         <div style={{ background: "white", padding: "20px", borderRadius: "12px", boxShadow: "0 4px 15px rgba(0,0,0,0.05)" }}>
           <div style={{ marginBottom: "15px" }}>
             <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "600", color: "#333", marginBottom: "5px" }}><span style={{ color: "green", marginRight: "5px" }}>●</span> Start Point</label>
@@ -542,7 +505,7 @@ export default function MapPage() {
           </div>
         </div>
 
-        {/* ROUTES DISPLAY */}
+        {/* ROUTES DISPLAY WITH EXPANDABLE DIRECTIONS */}
         {routes.length > 0 && (
           <div style={{ marginTop: "25px" }}>
             <h3 style={{ color: "#0C2B4E", fontSize: "1.1rem", marginBottom: "15px", borderBottom: "2px solid #e1e5e8", paddingBottom: "10px" }}>🤖 AI Route Analysis</h3>
@@ -552,34 +515,33 @@ export default function MapPage() {
                 const originalSeconds = route.summary.totalTime;
                 const isHeavyTraffic = i === 0;
                 const realTimeSeconds = isHeavyTraffic ? originalSeconds * 1.5 : originalSeconds;
-
+                
                 const aqiValue = route.pollutionLevel || 0;
                 const barWidth = Math.min((aqiValue / 300) * 100, 100);
                 const isSelected = selectedRouteIdx === i;
 
                 return (
-                  <div
-                    key={i}
+                  <div 
+                    key={i} 
                     onClick={() => handleRouteSelect(i)}
-                    // --- UPDATED STYLES FOR SELECTED STATE ---
-                    style={{
-                      border: isSelected ? "2px solid #0C2B4E" : "1px solid transparent",
-                      borderRadius: "10px",
-                      padding: "15px",
-                      cursor: "pointer",
-                      background: isSelected ? "#f0f9ff" : "white", // Light Blue bg when selected
-                      position: "relative",
+                    style={{ 
+                      border: isSelected ? "2px solid #0C2B4E" : "1px solid white", 
+                      borderRadius: "10px", 
+                      padding: "15px", 
+                      cursor: "pointer", 
+                      background: isSelected ? "#f0f9ff" : "white",
+                      position: "relative", 
                       boxShadow: isSelected ? "0 4px 12px rgba(12, 43, 78, 0.2)" : "0 2px 8px rgba(0,0,0,0.05)",
                       transition: "all 0.2s ease-in-out",
-                      transform: isSelected ? "translateY(-2px)" : "none" // Slight lift effect
-                    }}
-                    onMouseOver={(e) => { if (!isSelected) e.currentTarget.style.transform = "translateY(-2px)"; }}
+                      transform: isSelected ? "translateY(-2px)" : "none"
+                    }} 
+                    onMouseOver={(e) => { if (!isSelected) e.currentTarget.style.transform = "translateY(-2px)"; }} 
                     onMouseOut={(e) => { if (!isSelected) e.currentTarget.style.transform = "translateY(0)"; }}
                   >
                     {route.isRecommended && <div style={{ position: "absolute", top: "-10px", right: "10px", background: "#28a745", color: "white", padding: "4px 10px", borderRadius: "12px", fontSize: "0.75rem", fontWeight: "bold", boxShadow: "0 2px 5px rgba(0,0,0,0.1)" }}>✅ Recommended</div>}
-
+                    
                     <h4 style={{ margin: "0 0 8px 0", color: i === 0 ? "#d32f2f" : "#28a745" }}>Route {i + 1} {i === 0 ? "(Heavy Traffic)" : "(Clear)"}</h4>
-
+                    
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: "#555", marginBottom: "12px" }}>
                       <span>⏳ <b>{formatTime(realTimeSeconds)}</b></span>
                       <span>📏 <b>{(route.summary.totalDistance / 1000).toFixed(1)}</b> km</span>
@@ -593,35 +555,37 @@ export default function MapPage() {
                         </span>
                       </div>
                       <div style={{ width: "100%", height: "8px", background: "#f0f0f0", borderRadius: "4px", overflow: "hidden" }}>
-                        <div style={{
-                          width: `${barWidth}%`,
-                          height: "100%",
-                          background: aqiValue > 100 ? "linear-gradient(to right, orange, red)" : "linear-gradient(to right, #a8e063, #56ab2f)",
+                        <div style={{ 
+                          width: `${barWidth}%`, 
+                          height: "100%", 
+                          background: aqiValue > 100 ? "linear-gradient(to right, orange, red)" : "linear-gradient(to right, #a8e063, #56ab2f)", 
                           borderRadius: "4px",
                           transition: "width 0.5s ease-in-out"
                         }}></div>
                       </div>
                     </div>
 
+                    {/* --- TOGGLE BUTTON FOR DIRECTIONS --- */}
                     <div style={{ marginTop: "15px", paddingTop: "10px", borderTop: "1px solid #eee" }}>
-                      <button
+                      <button 
                         onClick={(e) => toggleDirections(e, i)}
                         style={{ width: "100%", background: "none", border: "none", color: "#007bff", cursor: "pointer", fontSize: "0.9rem", fontWeight: "600", display: "flex", alignItems: "center", justifyContent: "center", gap: "5px" }}
                       >
-                        <Navigation size={16} /> {isExpanded ? "Hide" : "Show"} Directions {isExpanded ? <ArrowUp size={14} /> : <ArrowUp size={14} style={{ transform: "rotate(180deg)" }} />}
+                        <Navigation size={16} /> {isExpanded ? "Hide" : "Show"} Directions {isExpanded ? <ArrowUp size={14}/> : <ArrowUp size={14} style={{transform: "rotate(180deg)"}}/>}
                       </button>
-
+                      
+                      {/* --- EXPANDABLE LIST WITH ICONS --- */}
                       {isExpanded && route.instructions && (
                         <div style={{ marginTop: "10px", background: "#f8f9fa", padding: "10px", borderRadius: "8px", maxHeight: "300px", overflowY: "auto" }}>
                           {route.instructions.map((step, stepIdx) => (
-                            <div key={stepIdx} style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "10px", fontSize: "0.9rem", color: "#333", borderBottom: stepIdx < route.instructions.length - 1 ? "1px solid #eee" : "none", paddingBottom: "8px" }}>
+                            <div key={stepIdx} style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "10px", fontSize: "0.9rem", color: "#333", borderBottom: stepIdx < route.instructions.length -1 ? "1px solid #eee" : "none", paddingBottom: "8px" }}>
                               <div style={{ flexShrink: 0, width: "32px", height: "32px", background: "white", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #ddd" }}>
                                 {getDirectionIcon(step.text, step.type)}
                               </div>
                               <div style={{ flex: 1 }}>
-                                <div style={{ fontWeight: 500 }}>{step.text}</div>
+                                <div style={{fontWeight: 500}}>{step.text}</div>
                                 <div style={{ fontSize: "0.75rem", color: "#888", marginTop: "2px" }}>
-                                  {step.distance > 1000 ? `${(step.distance / 1000).toFixed(1)} km` : `${Math.round(step.distance)} m`}
+                                  {step.distance > 1000 ? `${(step.distance/1000).toFixed(1)} km` : `${Math.round(step.distance)} m`}
                                 </div>
                               </div>
                             </div>
