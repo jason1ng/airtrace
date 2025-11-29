@@ -94,6 +94,18 @@ const MapClickHandler = ({ setStart, setEnd, mode }) => {
 };
 
 
+const getDirectionIcon = (text, type) => {
+  const lowerText = text ? text.toLowerCase() : "";
+  if (type === 'Head' || type === 'WaypointReached') return <MapPin size={20} color="#2e7d32" fill="#e8f5e9" />;
+  if (type === 'DestinationReached') return <Flag size={20} color="#c62828" fill="#ffebee" />;
+  if (lowerText.includes('left')) return <CornerUpLeft size={20} color="#555" />;
+  if (lowerText.includes('right')) return <CornerUpRight size={20} color="#555" />;
+  if (lowerText.includes('u-turn')) return <RotateCcw size={20} color="#555" />;
+  if (lowerText.includes('roundabout')) return <RotateCcw size={20} color="#555" />;
+  return <ArrowUp size={20} color="#555" />;
+};
+
+
 // ----------------------------------------------------------------------------------
 // --- MAIN COMPONENT ---
 // ----------------------------------------------------------------------------------
@@ -116,7 +128,7 @@ export default function MapPage() {
   const [showTraffic, setShowTraffic] = useState(false);
   const [showPollutionMarkers, setShowPollutionMarkers] = useState(true);
   const [showWind, setShowWind] = useState(false); 
-  // NEW: State for switching base map style
+  // State for switching base map style
   const [baseLayerUrl, setBaseLayerUrl] = useState("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
 
   
@@ -138,6 +150,9 @@ export default function MapPage() {
       // Basic coordinate validation/fix
       const safeResults = results
         .map(r => {
+          // Check if coordinates array is defined before accessing elements
+          if (!r.coordinates || r.coordinates.length < 2) return r;
+
           let lat = r.coordinates[0];
           let lng = r.coordinates[1];
           // Simple check to swap (lng, lat) to (lat, lng) if the API returns them swapped
@@ -172,31 +187,33 @@ export default function MapPage() {
 
         <MapContainer center={centerPos} zoom={11} style={{ height: "100%", width: "100%" }}>
 
-          {/* Base Layer - NOW DYNAMIC */}
+          {/* Base Layer - DYNAMICALLY CONTROLLED BY Map Style BUTTONS */}
           <TileLayer
             attribution='&copy; OpenStreetMap | CartoDB'
             url={baseLayerUrl}
+            zIndex={1} // Base layer
           />
           
-          {/* TRAFFIC LAYER */}
-          {showTraffic && (
-            <TileLayer
-              attribution='Google Maps'
-              url="https://mt0.google.com/vt/lyrs=m,traffic&hl=en&x={x}&y={y}&z={z}"
-              maxZoom={20}
-              zIndex={500}
+          {/* TRAFFIC LAYER FIX: Only render the traffic overlay when showTraffic is TRUE. 
+              When FALSE, it renders NULL, preserving the baseLayerUrl map style underneath. */}
+          {showTraffic ? (
+            <TileLayer 
+              attribution='Google Maps Traffic Overlay' 
+              url="https://mt0.google.com/vt/lyrs=m,traffic&hl=en&x={x}&y={y}&z={z}" 
+              maxZoom={20} 
+              zIndex={100} // Overlay layer
             />
-          )}
+          ) : null}
 
           {/* WIND LAYER (New) */}
           <WindLayer show={showWind} />
           
           {/* Pollution Dots & Circles */}
           {showPollutionMarkers && airData.map((point, index) => {
-             const radiusInMeters = getRadiusInMetersForAQI(point.value);
-             const fillColor = getAQIColor(point.value);
-             const PopupContent = (
-               <Popup>
+              const radiusInMeters = getRadiusInMetersForAQI(point.value);
+              const fillColor = getAQIColor(point.value);
+              const PopupContent = (
+                <Popup>
                   <div style={{ textAlign: 'center', minWidth: '150px' }}>
                     <div style={{ fontSize: '18px', fontWeight: 'bold', color: fillColor, marginBottom: '8px' }}>AQI: {point.value}</div>
                     <div style={{ marginBottom: '6px' }}><strong>{point.location}</strong></div>
@@ -204,14 +221,14 @@ export default function MapPage() {
                     <div style={{ fontSize: '11px', color: '#888', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #eee' }}>Radius: {(radiusInMeters / 1000).toFixed(1)} km</div>
                   </div>
                 </Popup>
-             );
-             return (
+              );
+              return (
                 <React.Fragment key={`marker-${point.id || index}`}>
                     <CircleMarker center={point.coordinates} radius={4} pathOptions={{ color: 'transparent', fillColor: fillColor, fillOpacity: 0.9 }}>{PopupContent}</CircleMarker>
                     <Circle center={point.coordinates} radius={radiusInMeters} pathOptions={{ color: fillColor, fillColor: fillColor, fillOpacity: 0.15, weight: 1 }}>{PopupContent}</Circle>
                 </React.Fragment>
-             );
-          })}
+              );
+            })}
 
           {startPoint && <Marker position={startPoint} icon={startIcon}><Popup>Start Point</Popup></Marker>}
           {endPoint && <Marker position={endPoint} icon={endIcon}><Popup>Destination</Popup></Marker>}
@@ -248,27 +265,27 @@ export default function MapPage() {
 
         {/* CONTROLS SECTION */}
         <div style={{ background: "white", padding: "12px", borderRadius: "10px", marginBottom: "15px", border: "1px solid #e1e5e8", boxShadow: "0 2px 5px rgba(0,0,0,0.03)" }}>
-           
+            
           {/* Base Layer Control */}
-           <div style={{ background: "white", padding: "0 0 10px 0", borderRadius: "10px", borderBottom: "1px solid #eee", marginBottom: "10px" }}>
-               <div style={{ fontWeight: "600", color: "#0C2B4E", marginBottom: "10px" }}>Map Style 🗺️</div>
-               <div style={{ display: "flex", gap: "10px" }}>
-                   <button 
-                       onClick={() => setBaseLayerUrl("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png")} 
-                       style={{ flex: 1, padding: "8px", borderRadius: "6px", border: baseLayerUrl.includes("openstreetmap") ? "2px solid #0C2B4E" : "1px solid #ccc", background: "white", cursor: "pointer" }}
-                   >
-                       Default
-                   </button>
-                   <button 
-                       onClick={() => setBaseLayerUrl("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png")} 
-                       style={{ flex: 1, padding: "8px", borderRadius: "6px", border: baseLayerUrl.includes("cartocdn") ? "2px solid #0C2B4E" : "1px solid #ccc", background: "white", cursor: "pointer" }}
-                   >
-                       Clean/Light
-                   </button>
-               </div>
-           </div>
+            <div style={{ background: "white", padding: "0 0 10px 0", borderRadius: "10px", borderBottom: "1px solid #eee", marginBottom: "10px" }}>
+              <div style={{ fontWeight: "600", color: "#0C2B4E", marginBottom: "10px" }}>Map Style 🗺️</div>
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button 
+                    onClick={() => setBaseLayerUrl("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png")} 
+                    style={{ flex: 1, padding: "8px", borderRadius: "6px", border: baseLayerUrl.includes("openstreetmap") ? "2px solid #0C2B4E" : "1px solid #ccc", background: "white", cursor: "pointer" }}
+                >
+                    Default
+                </button>
+                <button 
+                    onClick={() => setBaseLayerUrl("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png")} 
+                    style={{ flex: 1, padding: "8px", borderRadius: "6px", border: baseLayerUrl.includes("cartocdn") ? "2px solid #0C2B4E" : "1px solid #ccc", background: "white", cursor: "pointer" }}
+                >
+                    Clean/Light
+                </button>
+              </div>
+            </div>
 
-           {/* Single compact toggles block: Traffic, Wind, and Pollution markers */}
+            {/* Single compact toggles block: Traffic, Wind, and Pollution markers */}
           <div style={{ background: "white", padding: "12px", borderRadius: "10px", marginBottom: "0px", border: "1px solid #e1e5e8", display: "flex", flexDirection: "column", gap: "10px", boxShadow: "0 2px 5px rgba(0,0,0,0.03)" }}>
             <div style={{ display: "flex", alignItems: "center" }}>
               <input type="checkbox" id="trafficToggle" checked={showTraffic} onChange={(e) => setShowTraffic(e.target.checked)} style={{ width: "18px", height: "18px", cursor: "pointer", marginRight: "10px", accentColor: "#0C2B4E" }} />
