@@ -51,6 +51,11 @@ const RoutingControl = ({ start, end, onRoutesFound, airData = [] }) => {
       containerClassName: 'routing-hidden-container'
     }).addTo(map);
 
+    const container = routingControl.getContainer();
+    if (container) {
+      container.style.display = 'none';
+    }
+
     // Listen for routes found to pass data back to your "AI" panel
     routingControl.on("routesfound", async function (e) {
       const routes = e.routes;
@@ -134,6 +139,7 @@ const RoutingControl = ({ start, end, onRoutesFound, airData = [] }) => {
             name: r.name || `Route ${index + 1}`,
             summary: r.summary, // { totalDistance, totalTime }
             coordinates: routeCoords,
+            instructions: r.instructions,
             sampledPoints: sampledPoints,
             pollutionLevel: averageAQI !== null ? Math.round(averageAQI) : null,
             minAQI: minAQI,

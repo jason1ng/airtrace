@@ -1,39 +1,152 @@
 // WindLayer.jsx
+import { useEffect, useState, useRef } from 'react';
+import { useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet-velocity/dist/leaflet-velocity.css';
+import 'leaflet-velocity';
 
-// 1. We now only need TileLayer from react-leaflet
-import { TileLayer } from 'react-leaflet'; 
-
-// 2. Import the OWM wind tile URL from your service file
-// Adjust the relative path (../../) if your file structure is different.
-import { windyLayers } from '../../services/windyService'; 
-
-// All code related to leaflet, leaflet-velocity, GFS_WIND_DATA_URL, 
-// WIND_COLOR_SCALE, getParticleMultiplier, useMap, and useEffect is removed.
+import { fetchOWMWindForRegion } from '../../services/windyService';
 
 const WindLayer = ({ show }) => {
-  // If the 'show' prop is false, render nothing (hiding the layer)
-  if (!show) {
-    return null;
+  const map = useMap();
+  const [velocityLayer, setVelocityLayer] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const layerRef = useRef(null); // Use ref to track current layer for cleanup
+  const fetchTimeoutRef = useRef(null); // For debouncing
+
+  // Cleanup function to remove layer
+  const removeLayer = () => {
+    if (layerRef.current) {
+      try {
+        if (map.hasLayer(layerRef.current)) {
+          map.removeLayer(layerRef.current);
+        }
+      } catch (error) {
+        console.warn('Error removing wind layer:', error);
+      }
+      layerRef.current = null;
+      setVelocityLayer(null);
+    }
+  };
+
+  useEffect(() => {
+    // Clear any pending fetches
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+    }
+
+    if (!show) {
+      // Remove layer immediately when hidden
+      removeLayer();
+      setIsLoading(false);
+      return;
+    }
+
+    // Remove old layer immediately before fetching new data
+    // This prevents showing previous markers during zoom/pan
+    removeLayer();
+
+    // --- Fetch Data from OpenWeatherMap API for Southeast Asia ---
+    const fetchWindData = async () => {
+      setIsLoading(true);
+      
+      try {
+        console.log('Fetching wind data for Southeast Asia from OpenWeatherMap API...');
+        
+        // Use Southeast Asia region by default
+        const windData = await fetchOWMWindForRegion('SOUTHEAST_ASIA');
+        
+        if (!windData || windData.length < 2) {
+          console.error('OWM: Invalid wind data received.');
+          setIsLoading(false);
+          return;
+        }
+
+        // Double-check that show is still true (user might have toggled it off)
+        // Also ensure we don't have a layer already (race condition prevention)
+        if (!show || layerRef.current) {
+          setIsLoading(false);
+          return;
+        }
+
+        // --- Initialize and Add Leaflet-Velocity Layer ---
+        const newVelocityLayer = L.velocityLayer({
+          displayValues: true,
+          displayOptions: {
+            velocityType: 'wind',
+            position: 'bottomleft',
+            emptyString: 'No wind data',
+            angleConvention: 'bearingCCW', // Standard for wind data
+            speedUnit: 'ms' // meters per second
+          },
+          data: windData,
+          minVelocity: 0,
+          maxVelocity: 30, // Adjust based on your region's typical wind speeds
+          velocityScale: 0.005, // Adjust for visual appearance
+          colorScale: ['#ffffff', '#00aaff', '#0066ff', '#0033ff', '#0000ff'], // Blue gradient
+          opacity: 0.65,
+          particleMultiplier: 1/200, // Adjust particle density
+          lineWidth: 2,
+          frameRate: 20
+        });
+
+        // Store in ref and state
+        layerRef.current = newVelocityLayer;
+        setVelocityLayer(newVelocityLayer);
+
+        // Add to map
+        map.addLayer(newVelocityLayer);
+        
+        console.log('Wind layer added successfully for Southeast Asia');
+        setIsLoading(false);
+
+      } catch (error) {
+        console.error('Error fetching OWM wind data:', error);
+        setIsLoading(false);
+        // Clean up on error
+        removeLayer();
+      }
+    };
+
+    // Fetch data immediately when show becomes true
+    fetchWindData();
+    
+    // Cleanup function - remove layer when component unmounts or show changes
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+      removeLayer();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show]); // Only depend on 'show', not 'map' to avoid re-fetching on zoom/pan
+
+  // Show loading indicator (optional)
+  if (isLoading && show) {
+    console.log('Loading wind data...');
+    return (
+      <div
+        // Style to position the indicator centrally at the top of the map
+        style={{
+          position: "absolute",
+          top: "20px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 9999, // Ensure it's above other map elements
+          background: "rgba(255, 255, 255, 0.9)", // Semi-transparent background
+          padding: "10px 20px",
+          borderRadius: "20px",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+          fontWeight: "bold",
+          color: "#0C2B4E", // Using a dominant color from MapPage.jsx for consistency
+        }}
+      >
+        🌬️ Loading Wind Data...
+      </div>
+    )
   }
-  
-  // Retrieve the OWM Wind Tile Layer URL
-  const OWM_WIND_URL = windyLayers.wind; 
-  
-  return (
-    // Render a React-Leaflet TileLayer component
-    <TileLayer
-      // Use the OWM wind tile URL
-      url={OWM_WIND_URL}
-      
-      // Standard layer options
-      attribution="Wind data &copy; OpenWeatherMap"
-      maxZoom={19}
-      
-      // Optional styling for better map integration
-      opacity={0.65} 
-      zIndex={501} // Ensure it sits above the base map
-    />
-  );
+
+  return null;
 };
 
 export default WindLayer;
