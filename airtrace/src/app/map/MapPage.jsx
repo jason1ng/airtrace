@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMapEvents, Marker } from 'react-leaflet';
+import React, { useState, useEffect } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Circle, Popup, useMapEvents, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import RoutingControl from './RoutingControl';
-import HeatmapLayer from './HeatmapLayer';
-import { fetchAirQualityData, getAQIColor } from '../../services/openaqService';
+// IMPORT FROM NEW SERVICE
+import { fetchAirQualityData, getAQIColor } from '../../services/aqicnService';
 
 // --- ICONS ---
 const startIcon = new L.Icon({
@@ -37,7 +37,7 @@ function MapClickHandler({ setStart, setEnd, mode }) {
   return null;
 }
 
-// Helper to format seconds into "1 hr 20 min" or "45 min"
+// Helper to format seconds
 const formatTime = (seconds) => {
   const minutes = Math.round(seconds / 60);
   if (minutes < 60) return `${minutes} min`;
@@ -45,6 +45,16 @@ const formatTime = (seconds) => {
   const mins = minutes % 60;
   return `${hrs} hr ${mins} min`;
 };
+
+// Helper for Radius
+function getRadiusInMetersForAQI(aqi) {
+  if (aqi <= 50) return 500;
+  if (aqi <= 100) return 1000;
+  if (aqi <= 150) return 2000;
+  if (aqi <= 200) return 3500;
+  if (aqi <= 300) return 6000;
+  return 10000;
+}
 
 export default function MapPage() {
   const { logout } = useAuth();
@@ -56,7 +66,7 @@ export default function MapPage() {
 
   const [startPoint, setStartPoint] = useState(null);
   const [endPoint, setEndPoint] = useState(null);
-  const [selectionMode, setSelectionMode] = useState('start'); 
+  const [selectionMode, setSelectionMode] = useState(null); 
   const [routes, setRoutes] = useState([]);
   const [selectedRouteIdx, setSelectedRouteIdx] = useState(null);
   const [showTraffic, setShowTraffic] = useState(false); 
@@ -67,61 +77,31 @@ export default function MapPage() {
 
   const handleClearAll = () => {
     setStartPoint(null); setEndPoint(null); setRoutes([]);
-    setSelectedRouteIdx(null); setSelectionMode('start');
+    setSelectedRouteIdx(null); setSelectionMode(null);
   };
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       const results = await fetchAirQualityData();
-
-      // Strict safety filter to prevent Map crashes
-      const safeResults = results.filter(r =>
-        r.value !== null &&
-        Array.isArray(r.coordinates) &&
-        r.coordinates.length === 2 &&
-        typeof r.coordinates[0] === 'number' &&
-        typeof r.coordinates[1] === 'number'
-      );
-
-      console.log(`Map loaded with ${safeResults.length} valid points.`);
       
       const safeResults = results
         .map(r => {
             let lat = r.coordinates[0];
             let lng = r.coordinates[1];
+            // Safety check for swapped coordinates
             if (Math.abs(lat) > 90) return { ...r, coordinates: [lng, lat] };
             return r;
         })
         .filter(r => r.value !== null && Array.isArray(r.coordinates));
 
+      console.log(`Map loaded with ${safeResults.length} valid points.`);
       setAirData(safeResults);
       setLoading(false);
     };
 
     loadData();
   }, []);
-
-  if (loading) {
-    return (
-      <div style={{ padding: "20px", textAlign: "center", marginTop: "20%" }}>
-        <h2>Loading Intelligent Map Data...</h2>
-      </div>
-    );
-  }
-
-  // Get radius in meters for Circle (scales with zoom, maintains constant geographic area)
-  function getRadiusInMetersForAQI(aqi) {
-    if (aqi <= 50) return 500; // 0.5 km radius
-    if (aqi <= 100) return 1000; // 1 km radius
-    if (aqi <= 150) return 2000; // 2 km radius
-    if (aqi <= 200) return 3500; // 3.5 km radius
-    if (aqi <= 300) return 6000; // 6 km radius
-    return 10000; // 10 km radius
-  }
-  const heatmapPoints = useMemo(() => {
-    return airData.map(point => [point.coordinates[0], point.coordinates[1], point.value]);
-  }, [airData]);
 
   const handleRouteSelect = (idx) => {
     setSelectedRouteIdx(idx);
@@ -138,7 +118,6 @@ export default function MapPage() {
 
         <MapContainer center={centerPos} zoom={11} style={{ height: "100%", width: "100%" }}>
           
-          {/* HACKATHON FIX: Toggle between OSM (Clean) and Google Maps (Traffic) */}
           {showTraffic ? (
             <TileLayer
               attribution='Google Maps'
@@ -152,14 +131,56 @@ export default function MapPage() {
             />
           )}
           
-          {heatmapPoints.length > 0 && <HeatmapLayer points={heatmapPoints} />}
+          {/* Pollution Dots & Circles */}
+          {airData.map((point, index) => {
+             const radiusInMeters = getRadiusInMetersForAQI(point.value);
+             const fillColor = getAQIColor(point.value);
+             
+             // Define the popup content once to reuse it
+             const PopupContent = (
+               <Popup>
+                  <div style={{ textAlign: 'center', minWidth: '150px' }}>
+                    <div style={{
+                      fontSize: '18px',
+                      fontWeight: 'bold',
+                      color: fillColor,
+                      marginBottom: '8px'
+                    }}>
+                      AQI: {point.value}
+                    </div>
+                    <div style={{ marginBottom: '6px' }}>
+                      <strong>{point.location}</strong>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#666' }}>
+                      Last Updated: {new Date(point.lastUpdated).toLocaleString()}
+                    </div>
+                    <div style={{
+                      fontSize: '11px',
+                      color: '#888',
+                      marginTop: '8px',
+                      paddingTop: '8px',
+                      borderTop: '1px solid #eee'
+                    }}>
+                      Radius: {(radiusInMeters / 1000).toFixed(1)} km
+                    </div>
+                  </div>
+                </Popup>
+             );
 
-          {/* Pollution Dots */}
-          {airData.map((point, index) => (
-            <CircleMarker key={point.id || index} center={point.coordinates} radius={4} pathOptions={{ color: 'transparent', fillColor: getAQIColor(point.value), fillOpacity: 0.6 }}>
-              <Popup><strong>{point.location}</strong><br />PM2.5: {point.value}</Popup>
-            </CircleMarker>
-          ))}
+             return (
+                <React.Fragment key={`marker-${point.id || index}`}>
+                    {/* The Center Point - Has Popup */}
+                    <CircleMarker center={point.coordinates} radius={4} pathOptions={{ color: 'transparent', fillColor: fillColor, fillOpacity: 0.9 }}>
+                      {PopupContent}
+                    </CircleMarker>
+                    
+                    {/* The Large Radius Circle - NOW HAS POPUP TOO */}
+                    <Circle center={point.coordinates} radius={radiusInMeters} pathOptions={{ color: fillColor, fillColor: fillColor, fillOpacity: 0.15, weight: 1 }}>
+                      {PopupContent}
+                    </Circle>
+                </React.Fragment>
+             );
+          })}
 
           {startPoint && <Marker position={startPoint} icon={startIcon}><Popup>Start Point</Popup></Marker>}
           {endPoint && <Marker position={endPoint} icon={endIcon}><Popup>Destination</Popup></Marker>}
@@ -206,6 +227,13 @@ export default function MapPage() {
             </div>
           </div>
           <button onClick={handleClearAll} style={{ width: "100%", marginTop: "10px", background: "#f8f9fa", color: "#666", border: "1px solid #e1e5e8", borderRadius: "6px", padding: "10px", cursor: "pointer", fontWeight: "600", fontSize: "0.9rem" }}>🔄 Clear All</button>
+
+          <div style={{ fontSize: "0.85rem", color: "#666", textAlign: "center", fontStyle: "italic", marginTop: "15px" }}>
+            {selectionMode === 'start' ? "📍 Click map to set Start Point" : 
+             selectionMode === 'end' ? "🏁 Click map to set Destination" : 
+             startPoint && endPoint ? "✅ Points Set. Calculating..." :
+             "👆 Click 'Set' to enable map selection"}
+          </div>
         </div>
 
         {routes.length > 0 && (
@@ -213,13 +241,8 @@ export default function MapPage() {
             <h3 style={{ color: "#0C2B4E", fontSize: "1.1rem", marginBottom: "15px", borderBottom: "2px solid #e1e5e8", paddingBottom: "10px" }}>🤖 AI Route Analysis</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
               {routes.map((route, i) => {
-                // --- TRAFFIC TIME LOGIC ---
-                // OSRM gives free-flow time (no traffic). 
-                // We add a 'Jammed' factor to the Red route (index 0) to make it realistic.
                 const originalSeconds = route.summary.totalTime;
                 const isHeavyTraffic = i === 0;
-                
-                // Add 50% delay to the heavy traffic route
                 const realTimeSeconds = isHeavyTraffic ? originalSeconds * 1.5 : originalSeconds;
 
                 return (
@@ -231,9 +254,7 @@ export default function MapPage() {
                     </h4>
                     
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: "#555", marginBottom: "12px" }}>
-                      {/* Formatted Time with Traffic Calculation */}
                       <span>⏳ <b>{formatTime(realTimeSeconds)}</b></span>
-                      {/* Real Distance */}
                       <span>📏 <b>{(route.summary.totalDistance / 1000).toFixed(1)}</b> km</span>
                     </div>
 
@@ -254,93 +275,6 @@ export default function MapPage() {
         )}
       </div>
 
-    <div style={{ height: "100vh", width: "100vw" }}>
-      <MapContainer center={centerPos} zoom={7} scrollWheelZoom={true} style={{ height: "100%", width: "100%" }}>
-        <TileLayer
-          attribution='&copy; OpenStreetMap contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        <TileLayer
-          attribution='TomTom Traffic'
-          url="https://api.tomtom.com/traffic/map/4/tile/flow/absolute/{z}/{x}/{y}.png?key=a6d3383c-e57d-461d-886b-c95a5f4c53a1"
-          maxZoom={18}
-          minZoom={0}
-          zIndex={1000}
-        />
-
-        {/* The HeatmapLayer rendering has been removed */}
-
-        {/* Render markers for each air quality station */}
-        {airData.map((point, index) => {
-          const radiusInMeters = getRadiusInMetersForAQI(point.value);
-          const fillColor = getAQIColor(point.value);
-
-          return (
-            <React.Fragment key={`marker-${point.id || index}`}>
-              {/* Center point marker (fixed pixel size) */}
-              <CircleMarker
-                center={point.coordinates}
-                radius={5}
-                pathOptions={{
-                  color: 'white',
-                  weight: 1,
-                  fillColor: fillColor,
-                  fillOpacity: 0.9
-                }}
-              >
-                <Popup>
-                  <div>
-                    <strong>{point.location}</strong>
-                    <br />
-                    AQI: {point.value}
-                    <br />
-                    Last Updated: {new Date(point.lastUpdated).toLocaleString()}
-                  </div>
-                </Popup>
-              </CircleMarker>
-              {/* Outer circle with constant geographic radius (scales with zoom) */}
-              <Circle
-                center={point.coordinates}
-                radius={radiusInMeters}
-                pathOptions={{
-                  color: fillColor,
-                  fillColor: fillColor,
-                  fillOpacity: 0.18,
-                  weight: 1
-                }}
-              >
-                <Popup>
-                  <div style={{ textAlign: 'center', minWidth: '150px' }}>
-                    <div style={{
-                      fontSize: '18px',
-                      fontWeight: 'bold',
-                      color: fillColor,
-                      marginBottom: '8px'
-                    }}>
-                      AQI: {point.value}
-                    </div>
-                    <div style={{ marginBottom: '6px' }}>
-                      <strong>{point.location}</strong>
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#666' }}>
-                      Last Updated: {new Date(point.lastUpdated).toLocaleString()}
-                    </div>
-                    <div style={{
-                      fontSize: '11px',
-                      color: '#888',
-                      marginTop: '8px',
-                      paddingTop: '8px',
-                      borderTop: '1px solid #eee'
-                    }}>
-                      Radius: {(radiusInMeters / 1000).toFixed(1)} km
-                    </div>
-                  </div>
-                </Popup>
-              </Circle>
-            </React.Fragment>
-          );
-        })}
-      </MapContainer>
     </div>
   );
 }
