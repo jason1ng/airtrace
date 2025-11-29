@@ -42,6 +42,26 @@ The application combines multiple data sources to provide a comprehensive air qu
 
 ---
 
+---
+
+## Attribution and Credits
+
+This project is built upon the work of several excellent open-source projects and utilizes data from external API providers. We extend our gratitude to them:
+
+### Data & Services
+* **Air Quality Data:** Provided by the **[World Air Quality Index Project (AQICN)](https://aqicn.org/)**.
+* **Wind & Weather Data:** Forecasts and wind velocity data provided by **[OpenWeatherMap](https://openweathermap.org/)**.
+* **AI Assistant:** The conversational AI is powered by **[Sea-Lion AI](https://sea-lion.ai/)**.
+* **Backend & Auth:** Authentication and personalized data storage are handled by **[Google Firebase](https://firebase.google.com/)**.
+
+### Libraries & Assets
+* **Routing Engine:** Uses the **[Leaflet Routing Machine](https://www.liedman.net/leaflet-routing-machine/)** plugin.
+* **Wind Visualization:** Implemented using the **[Leaflet Velocity](https://github.com/danwild/leaflet-velocity)** plugin.
+* **Iconography:** Application icons provided by **[Lucide Icons](https://lucide.dev/)**.
+* **Map Markers:** Custom marker icons sourced from [Pointhi's Leaflet Color Markers](https://github.com/pointhi/leaflet-color-markers).
+
+*(Please refer to the respective project licenses for full details.)*
+
 ## Installation and Launch
 
 The application relies on several external APIs and Firebase services. You **must** set up your own keys and configure them, or the application will not function correctly.
