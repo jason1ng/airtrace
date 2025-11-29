@@ -446,7 +446,7 @@ export default function MapPage() {
             );
             return (
               <React.Fragment key={`marker-${point.id || index}`}>
-                <CircleMarker center={point.coordinates} radius={4} pathOptions={{ color: 'transparent', fillColor: fillColor, fillOpacity: 0.9 }}>{PopupContent}</CircleMarker>
+                <CircleMarker center={point.coordinates} radius={4} pathOptions={{ color: 'white', weight: 2, fillColor: fillColor, fillOpacity: 0.9 }}>{PopupContent}</CircleMarker>
                 <Circle center={point.coordinates} radius={radiusInMeters} pathOptions={{ color: fillColor, fillColor: fillColor, fillOpacity: 0.15, weight: 1 }}>{PopupContent}</Circle>
               </React.Fragment>
             );
@@ -480,9 +480,36 @@ export default function MapPage() {
       {/* --- SIDEBAR (Right) --- */}
       <div style={{ width: "380px", height: "100%", background: "#f4f7f6", boxShadow: "-2px 0 10px rgba(0,0,0,0.1)", zIndex: 1000, padding: "25px", display: "flex", flexDirection: "column", overflowY: "auto", borderLeft: "1px solid #e1e5e8" }}>
 
-        <div style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div><h2 style={{ color: "#0C2B4E", margin: 0, fontSize: "1.8rem" }}>Route Planner</h2><p style={{ color: "#666", fontSize: "0.9rem", marginTop: "5px" }}>Find the cleanest path.</p></div>
-          <button onClick={handleLogout} style={{ background: "white", color: "#d32f2f", border: "1px solid #ffcccb", padding: "6px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem", fontWeight: "bold" }}>Log Out</button>
+        {/* Added a blue bar across the panel */}
+        <div style={{ 
+          background: "#0C2B4E", // Blue bar color
+          padding: "15px", 
+          display: "flex", 
+          justifyContent: "space-between", 
+          alignItems: "center", 
+          color: "white", 
+          borderRadius: "6px", 
+          marginBottom: "20px" 
+        }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: "1.8rem" }}>AirTrace</h2>
+            <p style={{ fontSize: "0.9rem", marginTop: "5px" }}>Find the cleanest path.</p>
+          </div>
+          <button 
+            onClick={handleLogout} 
+            style={{ 
+              background: "#d32f2f", // Red background
+              color: "white", // White text
+              border: "0px solid #ffcccb", 
+              padding: "6px 12px", 
+              borderRadius: "6px", 
+              cursor: "pointer", 
+              fontSize: "0.8rem", 
+              fontWeight: "bold" 
+            }}
+          >
+            Log Out
+          </button>
         </div>
 
         {/* CONTROLS SECTION */}
@@ -490,7 +517,7 @@ export default function MapPage() {
 
           {/* Base Layer Control */}
           <div style={{ background: "white", padding: "0 0 10px 0", borderRadius: "10px", borderBottom: "1px solid #eee", marginBottom: "10px" }}>
-            <div style={{ fontWeight: "600", color: "#0C2B4E", marginBottom: "10px" }}>Map Style 🗺️</div>
+            <div style={{ fontWeight: "600", color: "#0C2B4E", marginBottom: "10px" }}>Map Style</div>
             <div style={{ display: "flex", gap: "10px" }}>
               <button
                 onClick={() => setBaseLayerUrl("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png")}
@@ -536,16 +563,16 @@ export default function MapPage() {
             <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "600", color: "#333", marginBottom: "5px" }}><span style={{ color: "red", marginRight: "5px" }}>●</span> Destination</label>
             <div style={{ display: "flex", gap: "8px" }}><input value={endPoint ? `${endPoint[0].toFixed(4)}, ${endPoint[1].toFixed(4)}` : ""} placeholder="Click 'Set' then Map..." readOnly style={{ flex: 1, padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", backgroundColor: selectionMode === 'end' ? "#fff5f5" : "#fff", outline: selectionMode === 'end' ? "2px solid red" : "none" }} /><button onClick={() => setSelectionMode('end')} style={{ background: selectionMode === 'end' ? "red" : "#f0f0f0", color: selectionMode === 'end' ? "white" : "#333", border: "none", borderRadius: "6px", padding: "0 15px", cursor: "pointer", fontWeight: "bold" }}>Set</button></div>
           </div>
-          <button onClick={handleClearAll} style={{ width: "100%", marginTop: "10px", background: "#f8f9fa", color: "#666", border: "1px solid #e1e5e8", borderRadius: "6px", padding: "10px", cursor: "pointer", fontWeight: "600", fontSize: "0.9rem" }}>🔄 Clear All</button>
+          <button onClick={handleClearAll} style={{ width: "100%", marginTop: "10px", background: "#f8f9fa", color: "#666", border: "1px solid #e1e5e8", borderRadius: "6px", padding: "10px", cursor: "pointer", fontWeight: "600", fontSize: "0.9rem" }}>Clear All</button>
           <div style={{ fontSize: "0.85rem", color: "#666", textAlign: "center", fontStyle: "italic", marginTop: "15px" }}>
-            {selectionMode === 'start' ? "📍 Click map to set Start Point" : selectionMode === 'end' ? "🏁 Click map to set Destination" : startPoint && endPoint ? "✅ Points Set. Calculating..." : "👆 Click 'Set' to enable map selection"}
+            {selectionMode === 'start' ? "📍 Click map to set Start Point" : selectionMode === 'end' ? "🏁 Click map to set Destination" : startPoint && endPoint ? "✅ Points Set. Calculating..." : "Click 'Set' to enable map selection"}
           </div>
         </div>
 
         {/* ROUTES DISPLAY */}
         {routes.length > 0 && (
           <div style={{ marginTop: "25px" }}>
-            <h3 style={{ color: "#0C2B4E", fontSize: "1.1rem", marginBottom: "15px", borderBottom: "2px solid #e1e5e8", paddingBottom: "10px" }}>🤖 AI Route Analysis</h3>
+            <h3 style={{ color: "#0C2B4E", fontSize: "1.1rem", marginBottom: "15px", borderBottom: "2px solid #e1e5e8", paddingBottom: "10px" }}>AI Route Analysis</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
               {routes.map((route, i) => {
                 const isExpanded = expandedRouteId === i;
