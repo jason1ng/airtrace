@@ -17,6 +17,7 @@ export default function AQINotification() {
   const [userLocation, setUserLocation] = useState(null);
   const [currentAQI, setCurrentAQI] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [isSensitiveGroup, setIsSensitiveGroup] = useState(false);
 
   // AQI threshold levels (based on US EPA standards)
   const AQI_THRESHOLDS = {
@@ -44,15 +45,17 @@ export default function AQINotification() {
     return aqi && aqi >= AQI_THRESHOLDS.UNHEALTHY;
   };
 
-  // Fetch user location from Firebase
+  // Fetch user location and health condition from Firebase
   useEffect(() => {
-    const fetchUserLocation = async () => {
+    const fetchUserData = async () => {
       if (!currentUser) return;
 
       try {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
+          
+          // Set user location
           if (userData.latitude && userData.longitude) {
             setUserLocation({
               lat: userData.latitude,
@@ -60,13 +63,22 @@ export default function AQINotification() {
               address: userData.home_address || 'Your location'
             });
           }
+          
+          // Check if user is in sensitive group
+          // Sensitive groups: asthma, copd, heart_disease, elderly, pregnant, other
+          // Not sensitive: none
+          const healthCondition = userData.disease || 'none';
+          const sensitiveConditions = ['asthma', 'copd', 'heart_disease', 'elderly', 'pregnant', 'other'];
+          setIsSensitiveGroup(sensitiveConditions.includes(healthCondition.toLowerCase()));
+          
+          console.log('User health condition:', healthCondition, 'Is sensitive group:', sensitiveConditions.includes(healthCondition.toLowerCase()));
         }
       } catch (error) {
-        console.error('Error fetching user location:', error);
+        console.error('Error fetching user data:', error);
       }
     };
 
-    fetchUserLocation();
+    fetchUserData();
   }, [currentUser]);
 
   // Check AQI when user location is available or refresh is triggered
@@ -100,28 +112,65 @@ export default function AQINotification() {
         if (result.estimatedAQI !== null) {
           setCurrentAQI(result.estimatedAQI);
           
-          // Show notification if AQI is at worse level
-          if (isWorseLevel(result.estimatedAQI)) {
-            const aqiInfo = getAQILevel(result.estimatedAQI);
-            setNotification({
-              type: 'warning',
-              title: '⚠️ High Air Quality Alert',
-              message: `Air Quality Index at your location is ${result.estimatedAQI.toFixed(1)} (${aqiInfo.level}). Consider limiting outdoor activities.`,
-              aqi: result.estimatedAQI,
-              level: aqiInfo.level,
-              color: aqiInfo.color
-            });
-          } else if (result.estimatedAQI >= AQI_THRESHOLDS.UNHEALTHY_SENSITIVE) {
-            // Also notify for sensitive groups
-            const aqiInfo = getAQILevel(result.estimatedAQI);
-            setNotification({
-              type: 'info',
-              title: '🌤️ Air Quality Notice',
-              message: `Air Quality Index at your location is ${result.estimatedAQI.toFixed(1)}. Sensitive groups should take precautions.`,
-              aqi: result.estimatedAQI,
-              level: aqiInfo.level,
-              color: aqiInfo.color
-            });
+          const aqiInfo = getAQILevel(result.estimatedAQI);
+          
+          // Determine notification thresholds based on user's sensitive group status
+          if (isSensitiveGroup) {
+            // Sensitive groups get notifications at lower thresholds
+            if (isWorseLevel(result.estimatedAQI)) {
+              // AQI >= 200 (Unhealthy or worse)
+              setNotification({
+                type: 'warning',
+                title: '⚠️ High Air Quality Alert - Sensitive Group',
+                message: `Air Quality Index at your location is ${result.estimatedAQI.toFixed(1)} (${aqiInfo.level}). As someone in a sensitive group, you should avoid outdoor activities and consider wearing a mask.`,
+                aqi: result.estimatedAQI,
+                level: aqiInfo.level,
+                color: aqiInfo.color
+              });
+            } else if (result.estimatedAQI >= AQI_THRESHOLDS.UNHEALTHY_SENSITIVE) {
+              // AQI >= 150 (Unhealthy for Sensitive Groups)
+              setNotification({
+                type: 'warning',
+                title: '🌤️ Air Quality Alert - Sensitive Group',
+                message: `Air Quality Index at your location is ${result.estimatedAQI.toFixed(1)} (${aqiInfo.level}). As someone in a sensitive group, you should limit outdoor activities and take precautions.`,
+                aqi: result.estimatedAQI,
+                level: aqiInfo.level,
+                color: aqiInfo.color
+              });
+            } else if (result.estimatedAQI >= AQI_THRESHOLDS.MODERATE) {
+              // AQI >= 100 (Moderate) - Sensitive groups should be aware
+              setNotification({
+                type: 'info',
+                title: '💡 Air Quality Notice - Sensitive Group',
+                message: `Air Quality Index at your location is ${result.estimatedAQI.toFixed(1)} (${aqiInfo.level}). As someone in a sensitive group, you may want to reduce prolonged outdoor activities.`,
+                aqi: result.estimatedAQI,
+                level: aqiInfo.level,
+                color: aqiInfo.color
+              });
+            }
+          } else {
+            // Non-sensitive users only get notifications at higher thresholds
+            if (isWorseLevel(result.estimatedAQI)) {
+              // AQI >= 200 (Unhealthy or worse)
+              setNotification({
+                type: 'warning',
+                title: '⚠️ High Air Quality Alert',
+                message: `Air Quality Index at your location is ${result.estimatedAQI.toFixed(1)} (${aqiInfo.level}). Consider limiting outdoor activities.`,
+                aqi: result.estimatedAQI,
+                level: aqiInfo.level,
+                color: aqiInfo.color
+              });
+            } else if (result.estimatedAQI >= AQI_THRESHOLDS.UNHEALTHY_SENSITIVE) {
+              // AQI >= 150 (Unhealthy for Sensitive Groups) - Informational for non-sensitive
+              setNotification({
+                type: 'info',
+                title: '🌤️ Air Quality Notice',
+                message: `Air Quality Index at your location is ${result.estimatedAQI.toFixed(1)} (${aqiInfo.level}). Sensitive groups should take precautions.`,
+                aqi: result.estimatedAQI,
+                level: aqiInfo.level,
+                color: aqiInfo.color
+              });
+            }
           }
         }
       } catch (error) {
@@ -137,7 +186,7 @@ export default function AQINotification() {
     // Check AQI every 5 minutes
     const interval = setInterval(checkAQI, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, [userLocation, refreshTrigger]);
+  }, [userLocation, refreshTrigger, isSensitiveGroup]);
 
   // Auto-dismiss notification after 10 seconds
   useEffect(() => {
