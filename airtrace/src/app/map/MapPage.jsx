@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Circle, Popup, useMapEvents, Marker, Polyline } from 'react-leaflet';
+import React, { useState, useEffect, useMemo } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Circle, Popup, useMapEvents, Marker, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +9,12 @@ import { useAuth } from '../../contexts/AuthContext';
 import RoutingControl from './RoutingControl';
 import WindLayer from './WindLayer';
 import { fetchAirQualityData, getAQIColor } from '../../services/aqicnService';
+
+import { 
+  MapPin, Flag, Navigation, 
+  CornerUpLeft, CornerUpRight, ArrowUp, 
+  RotateCcw, Circle as CircleIcon 
+} from 'lucide-react';
 
 // --- ICONS ---
 // Fix for custom marker icons using external URLs
@@ -29,6 +35,16 @@ const endIcon = new L.Icon({
   popupAnchor: [1, -34],
   shadowSize: [41, 41]
 });
+
+function MapViewHandler({ centerPos }) {
+  const map = useMap();
+  useEffect(() => {
+    if (centerPos) {
+      map.flyTo(centerPos, 12, { duration: 2 });
+    }
+  }, [centerPos, map]);
+  return null;
+}
 
 // --- HELPER FUNCTIONS ---
 
@@ -86,13 +102,13 @@ export default function MapPage() {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
-  const [centerPos] = useState([3.1473, 101.6991]);
+  const [centerPos, setCenterPos] = useState([3.1473, 101.6991]); 
   const [airData, setAirData] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const [startPoint, setStartPoint] = useState(null);
   const [endPoint, setEndPoint] = useState(null);
-  const [selectionMode, setSelectionMode] = useState(null);
+  const [selectionMode, setSelectionMode] = useState(null); 
   const [routes, setRoutes] = useState([]);
   const [selectedRouteIdx, setSelectedRouteIdx] = useState(null);
   
@@ -103,6 +119,8 @@ export default function MapPage() {
   // NEW: State for switching base map style
   const [baseLayerUrl, setBaseLayerUrl] = useState("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png");
 
+  
+  const [expandedRouteId, setExpandedRouteId] = useState(null);
 
   const handleLogout = async () => {
     try { await logout(); navigate('/login'); } catch (error) { console.error(error); }
@@ -110,14 +128,13 @@ export default function MapPage() {
 
   const handleClearAll = () => {
     setStartPoint(null); setEndPoint(null); setRoutes([]);
-    setSelectedRouteIdx(null); setSelectionMode(null);
+    setSelectedRouteIdx(null); setSelectionMode(null); setExpandedRouteId(null);
   };
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       const results = await fetchAirQualityData();
-
       // Basic coordinate validation/fix
       const safeResults = results
         .map(r => {
@@ -138,15 +155,19 @@ export default function MapPage() {
 
   const handleRouteSelect = (idx) => {
     setSelectedRouteIdx(idx);
-    alert(`Route ${idx + 1} selected!`); // Simple alert for feedback
+  };
+
+  const toggleDirections = (e, idx) => {
+    e.stopPropagation(); 
+    setExpandedRouteId(expandedRouteId === idx ? null : idx);
   };
 
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative", display: "flex", flexDirection: "row" }}>
-
+      
       {/* --- MAP (Left) --- */}
       <div style={{ flex: 1, height: "100%", position: "relative" }}>
-
+        
         {loading && <div style={{ position: "absolute", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 9999, background: "white", padding: "10px 20px", borderRadius: "20px", boxShadow: "0 2px 10px rgba(0,0,0,0.1)" }}>Loading Air Data...</div>}
 
         <MapContainer center={centerPos} zoom={11} style={{ height: "100%", width: "100%" }}>
@@ -172,133 +193,42 @@ export default function MapPage() {
           
           {/* Pollution Dots & Circles */}
           {showPollutionMarkers && airData.map((point, index) => {
-            const radiusInMeters = getRadiusInMetersForAQI(point.value);
-            const fillColor = getAQIColor(point.value);
-
-            // Define the popup content once to reuse it
-            const PopupContent = (
-              <Popup>
-                <div style={{ textAlign: 'center', minWidth: '150px' }}>
-                  <div
-                    style={{
-                      fontSize: '18px',
-                      fontWeight: 'bold',
-                      color: fillColor,
-                      marginBottom: '8px',
-                      WebkitTextStroke: '0.5px black',   // outline thickness + color
-                      textStroke: '0.5px black'          // fallback for some browsers
-                    }}
-                  >
-                    AQI: {point.value}
+             const radiusInMeters = getRadiusInMetersForAQI(point.value);
+             const fillColor = getAQIColor(point.value);
+             const PopupContent = (
+               <Popup>
+                  <div style={{ textAlign: 'center', minWidth: '150px' }}>
+                    <div style={{ fontSize: '18px', fontWeight: 'bold', color: fillColor, marginBottom: '8px' }}>AQI: {point.value}</div>
+                    <div style={{ marginBottom: '6px' }}><strong>{point.location}</strong></div>
+                    <div style={{ fontSize: '12px', color: '#666' }}>Last Updated: {new Date(point.lastUpdated).toLocaleString()}</div>
+                    <div style={{ fontSize: '11px', color: '#888', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #eee' }}>Radius: {(radiusInMeters / 1000).toFixed(1)} km</div>
                   </div>
-                  <div style={{ marginBottom: '6px' }}>
-                    <strong>{point.location}</strong>
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#666' }}>
-                    Last Updated: {new Date(point.lastUpdated).toLocaleString()}
-                  </div>
-                  <div style={{
-                    fontSize: '11px',
-                    color: '#888',
-                    marginTop: '8px',
-                    paddingTop: '8px',
-                    borderTop: '1px solid #eee'
-                  }}>
-                    Radius: {(radiusInMeters / 1000).toFixed(1)} km
-                  </div>
-                </div>
-              </Popup>
-            );
-
-            return (
-              <React.Fragment key={`marker-${point.id || index}`}>
-                {/* The Center Point - Has Popup */}
-                <CircleMarker
-                  center={point.coordinates}
-                  radius={4}
-                  pathOptions={{
-                    color: 'white',        // outline color
-                    weight: 2,             // outline thickness
-                    fillColor: fillColor,  // inside color
-                    fillOpacity: 0.9
-                  }}
-                >
-                  {PopupContent}
-                </CircleMarker>
-
-
-                {/* The Large Radius Circle - NOW HAS POPUP TOO */}
-                <Circle center={point.coordinates} radius={radiusInMeters} pathOptions={{ color: fillColor, fillColor: fillColor, fillOpacity: 0.25, weight: 1 }}>
-                  {PopupContent}
-                </Circle>
-              </React.Fragment>
-            );
+                </Popup>
+             );
+             return (
+                <React.Fragment key={`marker-${point.id || index}`}>
+                    <CircleMarker center={point.coordinates} radius={4} pathOptions={{ color: 'transparent', fillColor: fillColor, fillOpacity: 0.9 }}>{PopupContent}</CircleMarker>
+                    <Circle center={point.coordinates} radius={radiusInMeters} pathOptions={{ color: fillColor, fillColor: fillColor, fillOpacity: 0.15, weight: 1 }}>{PopupContent}</Circle>
+                </React.Fragment>
+             );
           })}
 
           {startPoint && <Marker position={startPoint} icon={startIcon}><Popup>Start Point</Popup></Marker>}
           {endPoint && <Marker position={endPoint} icon={endIcon}><Popup>Destination</Popup></Marker>}
 
-          {/* Render all 5 routes on the map */}
           {routes.map((route, index) => {
             if (!route.coordinates || route.coordinates.length === 0) return null;
-
-            // Color scheme for the 5 routes
-            const routeColors = [
-              "#d32f2f", // Red - Route 1
-              "#ff9800", // Orange - Route 2
-              "#4caf50", // Green - Route 3
-              "#2196f3", // Blue - Route 4
-              "#9c27b0"  // Purple - Route 5
-            ];
-
+            const routeColors = ["#d32f2f", "#ff9800", "#4caf50", "#2196f3", "#9c27b0"];
             const routeColor = routeColors[index] || "#666";
             const isSelected = selectedRouteIdx === index;
 
             return (
               <Polyline
-                key={`route-${route.id || index}`}
+                key={`route-${index}`}
                 positions={route.coordinates}
-                pathOptions={{
-                  color: routeColor,
-                  weight: isSelected ? 8 : 6,
-                  opacity: isSelected ? 0.9 : 0.7,
-                  dashArray: index > 0 ? (index % 2 === 0 ? "10, 5" : "5, 5") : undefined
-                }}
-                eventHandlers={{
-                  click: () => handleRouteSelect(index)
-                }}
-              >
-                <Popup>
-                  <div style={{ textAlign: 'center', minWidth: '150px' }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: '8px', color: routeColor }}>
-                      Route {index + 1}
-                    </div>
-                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>
-                      Distance: {(route.summary.totalDistance / 1000).toFixed(1)} km
-                    </div>
-                    <div style={{ fontSize: '14px', marginBottom: '4px' }}>
-                      Time: {formatTime(route.summary.totalTime)}
-                    </div>
-                    {route.pollutionLevel !== null && (
-                      <div style={{ fontSize: '14px', marginTop: '8px', paddingTop: '8px', borderTop: '1px solid #eee' }}>
-                        <div style={{ fontWeight: 'bold', color: route.pollutionLevel > 100 ? "#d32f2f" : "#28a745" }}>
-                          AQI: {route.pollutionLevel}
-                        </div>
-                        {route.minAQI !== null && route.maxAQI !== null && (
-                          <div style={{ fontSize: '12px', color: '#666', marginTop: '4px' }}>
-                            Range: {route.minAQI.toFixed(1)} - {route.maxAQI.toFixed(1)}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {route.isRecommended && (
-                      <div style={{ marginTop: '8px', padding: '4px 8px', background: '#28a745', color: 'white', borderRadius: '4px', fontSize: '12px', fontWeight: 'bold' }}>
-                        Recommended
-                      </div>
-                    )}
-                  </div>
-                </Popup>
-              </Polyline>
+                pathOptions={{ color: routeColor, weight: isSelected ? 8 : 5, opacity: isSelected ? 0.9 : 0.6 }}
+                eventHandlers={{ click: () => handleRouteSelect(index) }}
+              />
             );
           })}
 
@@ -309,16 +239,10 @@ export default function MapPage() {
       </div>
 
       {/* --- SIDEBAR (Right) --- */}
-      <div style={{
-        width: "380px", height: "100%", background: "#f4f7f6",
-        boxShadow: "-2px 0 10px rgba(0,0,0,0.1)", zIndex: 1000,
-        padding: "25px", display: "flex", flexDirection: "column", overflowY: "auto", borderLeft: "1px solid #e1e5e8"
-      }}>
+      <div style={{ width: "380px", height: "100%", background: "#f4f7f6", boxShadow: "-2px 0 10px rgba(0,0,0,0.1)", zIndex: 1000, padding: "25px", display: "flex", flexDirection: "column", overflowY: "auto", borderLeft: "1px solid #e1e5e8" }}>
+        
         <div style={{ marginBottom: "20px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <h2 style={{ color: "#0C2B4E", margin: 0, fontSize: "1.8rem" }}>Route Planner</h2>
-            <p style={{ color: "#666", fontSize: "0.9rem", marginTop: "5px" }}>Find the cleanest path.</p>
-          </div>
+          <div><h2 style={{ color: "#0C2B4E", margin: 0, fontSize: "1.8rem" }}>Route Planner</h2><p style={{ color: "#666", fontSize: "0.9rem", marginTop: "5px" }}>Find the cleanest path.</p></div>
           <button onClick={handleLogout} style={{ background: "white", color: "#d32f2f", border: "1px solid #ffcccb", padding: "6px 12px", borderRadius: "6px", cursor: "pointer", fontSize: "0.8rem", fontWeight: "bold" }}>Log Out</button>
         </div>
 
@@ -367,67 +291,56 @@ export default function MapPage() {
         <div style={{ background: "white", padding: "20px", borderRadius: "12px", boxShadow: "0 4px 15px rgba(0,0,0,0.05)" }}>
           <div style={{ marginBottom: "15px" }}>
             <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "600", color: "#333", marginBottom: "5px" }}><span style={{ color: "green", marginRight: "5px" }}>●</span> Start Point</label>
-            <div style={{ display: "flex", gap: "8px" }}>
-              <input value={startPoint ? `${startPoint[0].toFixed(4)}, ${startPoint[1].toFixed(4)}` : ""} placeholder="Click on map..." readOnly style={{ flex: 1, padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", backgroundColor: selectionMode === 'start' ? "#e6fffa" : "#fff", outline: selectionMode === 'start' ? "2px solid green" : "none" }} />
-              <button onClick={() => setSelectionMode('start')} style={{ background: selectionMode === 'start' ? "green" : "#f0f0f0", color: selectionMode === 'start' ? "white" : "#333", border: "none", borderRadius: "6px", padding: "0 15px", cursor: "pointer", fontWeight: "bold" }}>Set</button>
-            </div>
+            <div style={{ display: "flex", gap: "8px" }}><input value={startPoint ? `${startPoint[0].toFixed(4)}, ${startPoint[1].toFixed(4)}` : ""} placeholder="Click 'Set' then Map..." readOnly style={{ flex: 1, padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", backgroundColor: selectionMode === 'start' ? "#e6fffa" : "#fff", outline: selectionMode === 'start' ? "2px solid green" : "none" }} /><button onClick={() => setSelectionMode('start')} style={{ background: selectionMode === 'start' ? "green" : "#f0f0f0", color: selectionMode === 'start' ? "white" : "#333", border: "none", borderRadius: "6px", padding: "0 15px", cursor: "pointer", fontWeight: "bold" }}>Set</button></div>
           </div>
           <div style={{ marginBottom: "15px" }}>
             <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "600", color: "#333", marginBottom: "5px" }}><span style={{ color: "red", marginRight: "5px" }}>●</span> Destination</label>
-            <div style={{ display: "flex", gap: "8px" }}>
-              <input value={endPoint ? `${endPoint[0].toFixed(4)}, ${endPoint[1].toFixed(4)}` : ""} placeholder="Click on map..." readOnly style={{ flex: 1, padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", backgroundColor: selectionMode === 'end' ? "#fff5f5" : "#fff", outline: selectionMode === 'end' ? "2px solid red" : "none" }} />
-              <button onClick={() => setSelectionMode('end')} style={{ background: selectionMode === 'end' ? "red" : "#f0f0f0", color: selectionMode === 'end' ? "white" : "#333", border: "none", borderRadius: "6px", padding: "0 15px", cursor: "pointer", fontWeight: "bold" }}>Set</button>
-            </div>
+            <div style={{ display: "flex", gap: "8px" }}><input value={endPoint ? `${endPoint[0].toFixed(4)}, ${endPoint[1].toFixed(4)}` : ""} placeholder="Click 'Set' then Map..." readOnly style={{ flex: 1, padding: "10px", borderRadius: "6px", border: "1px solid #e2e8f0", backgroundColor: selectionMode === 'end' ? "#fff5f5" : "#fff", outline: selectionMode === 'end' ? "2px solid red" : "none" }} /><button onClick={() => setSelectionMode('end')} style={{ background: selectionMode === 'end' ? "red" : "#f0f0f0", color: selectionMode === 'end' ? "white" : "#333", border: "none", borderRadius: "6px", padding: "0 15px", cursor: "pointer", fontWeight: "bold" }}>Set</button></div>
           </div>
-          <button onClick={handleClearAll} style={{ width: "100%", marginTop: "10px", background: "#f8f9fa", color: "#666", border: "1px solid #e1e5e8", borderRadius: "6px", padding: "10px", cursor: "pointer", fontWeight: "600", fontSize: "0.9rem" }}>Clear All</button>
-
+          <button onClick={handleClearAll} style={{ width: "100%", marginTop: "10px", background: "#f8f9fa", color: "#666", border: "1px solid #e1e5e8", borderRadius: "6px", padding: "10px", cursor: "pointer", fontWeight: "600", fontSize: "0.9rem" }}>🔄 Clear All</button>
           <div style={{ fontSize: "0.85rem", color: "#666", textAlign: "center", fontStyle: "italic", marginTop: "15px" }}>
-            {selectionMode === 'start' ? "Click map to set Start Point" :
-              selectionMode === 'end' ? "Click map to set Destination" :
-                startPoint && endPoint ? "Points Set. Calculating..." :
-                  "Click 'Set' to enable map selection"}
+            {selectionMode === 'start' ? "📍 Click map to set Start Point" : selectionMode === 'end' ? "🏁 Click map to set Destination" : startPoint && endPoint ? "✅ Points Set. Calculating..." : "👆 Click 'Set' to enable map selection"}
           </div>
         </div>
 
         {/* ROUTES DISPLAY */}
         {routes.length > 0 && (
           <div style={{ marginTop: "25px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
-              <h3 style={{ color: "#0C2B4E", fontSize: "1.1rem", margin: 0, borderBottom: "2px solid #e1e5e8", paddingBottom: "10px", flex: 1 }}>🤖 AI Route Analysis</h3>
-              <div style={{ fontSize: "0.75rem", color: "#666", marginLeft: "10px" }}>
-                {routes.length} route{routes.length !== 1 ? 's' : ''} found
-              </div>
-            </div>
-
-            {/* Route Color Legend */}
-            <div style={{ background: "white", padding: "10px", borderRadius: "8px", marginBottom: "15px", fontSize: "0.8rem", border: "1px solid #e1e5e8" }}>
-              <div style={{ fontWeight: "600", marginBottom: "6px", color: "#333" }}>Route Colors:</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
-                {routes.slice(0, 5).map((route, i) => {
-                  const routeColors = ["#d32f2f", "#ff9800", "#4caf50", "#2196f3", "#9c27b0"];
-                  return (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                      <div style={{ width: "16px", height: "3px", background: routeColors[i], borderRadius: "2px" }}></div>
-                      <span style={{ color: "#666" }}>Route {i + 1}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            <h3 style={{ color: "#0C2B4E", fontSize: "1.1rem", marginBottom: "15px", borderBottom: "2px solid #e1e5e8", paddingBottom: "10px" }}>🤖 AI Route Analysis</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
               {routes.map((route, i) => {
+                const isExpanded = expandedRouteId === i;
                 const originalSeconds = route.summary.totalTime;
                 const isHeavyTraffic = i === 0;
                 const realTimeSeconds = isHeavyTraffic ? originalSeconds * 1.5 : originalSeconds;
+                
+                const aqiValue = route.pollutionLevel || 0;
+                const barWidth = Math.min((aqiValue / 300) * 100, 100);
+                const isSelected = selectedRouteIdx === i;
 
                 return (
-                  <div key={i} onClick={() => handleRouteSelect(i)} style={{ border: selectedRouteIdx === i ? "2px solid #0C2B4E" : "1px solid white", borderRadius: "10px", padding: "15px", cursor: "pointer", background: "white", position: "relative", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", transition: "transform 0.2s" }} onMouseOver={(e) => e.currentTarget.style.transform = "translateY(-2px)"} onMouseOut={(e) => e.currentTarget.style.transform = "translateY(0)"}>
+                  <div 
+                    key={i} 
+                    onClick={() => handleRouteSelect(i)} 
+                    // --- UPDATED STYLES FOR SELECTED STATE ---
+                    style={{ 
+                      border: isSelected ? "2px solid #0C2B4E" : "1px solid transparent", 
+                      borderRadius: "10px", 
+                      padding: "15px", 
+                      cursor: "pointer", 
+                      background: isSelected ? "#f0f9ff" : "white", // Light Blue bg when selected
+                      position: "relative", 
+                      boxShadow: isSelected ? "0 4px 12px rgba(12, 43, 78, 0.2)" : "0 2px 8px rgba(0,0,0,0.05)",
+                      transition: "all 0.2s ease-in-out",
+                      transform: isSelected ? "translateY(-2px)" : "none" // Slight lift effect
+                    }} 
+                    onMouseOver={(e) => { if (!isSelected) e.currentTarget.style.transform = "translateY(-2px)"; }} 
+                    onMouseOut={(e) => { if (!isSelected) e.currentTarget.style.transform = "translateY(0)"; }}
+                  >
                     {route.isRecommended && <div style={{ position: "absolute", top: "-10px", right: "10px", background: "#28a745", color: "white", padding: "4px 10px", borderRadius: "12px", fontSize: "0.75rem", fontWeight: "bold", boxShadow: "0 2px 5px rgba(0,0,0,0.1)" }}>✅ Recommended</div>}
-
-                    <h4 style={{ margin: "0 0 8px 0", color: i === 0 ? "#d32f2f" : "#28a745" }}>
-                      Route {i + 1} {i === 0 ? "(Heavy Traffic)" : "(Clear)"}
-                    </h4>
-
+                    
+                    <h4 style={{ margin: "0 0 8px 0", color: i === 0 ? "#d32f2f" : "#28a745" }}>Route {i + 1} {i === 0 ? "(Heavy Traffic)" : "(Clear)"}</h4>
+                    
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: "#555", marginBottom: "12px" }}>
                       <span>⏳ <b>{formatTime(realTimeSeconds)}</b></span>
                       <span>📏 <b>{(route.summary.totalDistance / 1000).toFixed(1)}</b> km</span>
@@ -436,23 +349,48 @@ export default function MapPage() {
                     <div style={{ marginTop: "5px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", marginBottom: "3px" }}>
                         <span>Air Pollution Impact</span>
-                        <span style={{ fontWeight: "bold", color: route.pollutionLevel && route.pollutionLevel > 100 ? "#d32f2f" : route.pollutionLevel ? "#28a745" : "#999" }}>
+                        <span style={{ fontWeight: "bold", color: aqiValue > 100 ? "#d32f2f" : "#28a745" }}>
                           {route.pollutionLevel !== null ? `${route.pollutionLevel} AQI` : "Calculating..."}
                         </span>
                       </div>
-                      {route.pollutionLevel !== null && (
-                        <>
-                          <div style={{ width: "100%", height: "8px", background: "#f0f0f0", borderRadius: "4px", overflow: "hidden", marginBottom: "4px" }}>
-                            <div style={{ width: `${Math.min((route.pollutionLevel / 300) * 100, 100)}%`, height: "100%", background: route.pollutionLevel > 100 ? "linear-gradient(to right, orange, red)" : "linear-gradient(to right, #a8e063, #56ab2f)", borderRadius: "4px" }}></div>
-                          </div>
-                          {route.minAQI !== null && route.maxAQI !== null && (
-                            <div style={{ fontSize: "0.75rem", color: "#888", textAlign: "center" }}>
-                              Range: {route.minAQI.toFixed(1)} - {route.maxAQI.toFixed(1)} AQI
+                      <div style={{ width: "100%", height: "8px", background: "#f0f0f0", borderRadius: "4px", overflow: "hidden" }}>
+                        <div style={{ 
+                          width: `${barWidth}%`, 
+                          height: "100%", 
+                          background: aqiValue > 100 ? "linear-gradient(to right, orange, red)" : "linear-gradient(to right, #a8e063, #56ab2f)", 
+                          borderRadius: "4px",
+                          transition: "width 0.5s ease-in-out"
+                        }}></div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: "15px", paddingTop: "10px", borderTop: "1px solid #eee" }}>
+                      <button 
+                        onClick={(e) => toggleDirections(e, i)}
+                        style={{ width: "100%", background: "none", border: "none", color: "#007bff", cursor: "pointer", fontSize: "0.9rem", fontWeight: "600", display: "flex", alignItems: "center", justifyContent: "center", gap: "5px" }}
+                      >
+                        <Navigation size={16} /> {isExpanded ? "Hide" : "Show"} Directions {isExpanded ? <ArrowUp size={14}/> : <ArrowUp size={14} style={{transform: "rotate(180deg)"}}/>}
+                      </button>
+                      
+                      {isExpanded && route.instructions && (
+                        <div style={{ marginTop: "10px", background: "#f8f9fa", padding: "10px", borderRadius: "8px", maxHeight: "300px", overflowY: "auto" }}>
+                          {route.instructions.map((step, stepIdx) => (
+                            <div key={stepIdx} style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "10px", fontSize: "0.9rem", color: "#333", borderBottom: stepIdx < route.instructions.length -1 ? "1px solid #eee" : "none", paddingBottom: "8px" }}>
+                              <div style={{ flexShrink: 0, width: "32px", height: "32px", background: "white", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid #ddd" }}>
+                                {getDirectionIcon(step.text, step.type)}
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <div style={{fontWeight: 500}}>{step.text}</div>
+                                <div style={{ fontSize: "0.75rem", color: "#888", marginTop: "2px" }}>
+                                  {step.distance > 1000 ? `${(step.distance/1000).toFixed(1)} km` : `${Math.round(step.distance)} m`}
+                                </div>
+                              </div>
                             </div>
-                          )}
-                        </>
+                          ))}
+                        </div>
                       )}
                     </div>
+
                   </div>
                 );
               })}
