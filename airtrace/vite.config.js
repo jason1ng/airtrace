@@ -6,11 +6,6 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/openaq': {
-        target: 'https://api.openaq.org', // The external API
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/openaq/, '') // Remove '/openaq' before sending
-      },
       '/tomtom': {
         target: 'https://api.tomtom.com',
         changeOrigin: true,
