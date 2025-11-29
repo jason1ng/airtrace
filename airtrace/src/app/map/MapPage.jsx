@@ -1,24 +1,45 @@
-// src/app/map/MapPage.jsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { fetchAirQualityData, getAQIColor } from '../../services/openaqService';
+import HeatmapLayer from './HeatmapLayer';
 
 export default function MapPage() {
-  const [centerPos] = useState([3.1473, 101.6991]);
+  const [centerPos] = useState([4.2105, 101.9758]); // Center of Malaysia
   const [airData, setAirData] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      const results = await fetchAirQualityData(centerPos[0], centerPos[1], 50000);
-      console.log("Fetched Air Data:", results); // Debugging purposes
-      setAirData(results);
+      const results = await fetchAirQualityData();
+      
+      // Strict safety filter to prevent Map crashes
+      const safeResults = results.filter(r => 
+        r.value !== null &&
+        Array.isArray(r.coordinates) && 
+        r.coordinates.length === 2 &&
+        typeof r.coordinates[0] === 'number' && !isNaN(r.coordinates[0]) &&
+        typeof r.coordinates[1] === 'number' && !isNaN(r.coordinates[1])
+      );
+
+      console.log(`Map loaded with ${safeResults.length} valid points.`);
+      setAirData(safeResults);
       setLoading(false);
     };
     loadData();
-  }, [centerPos]);
+  }, []);
+
+  // --- FIX 1: useMemo ---
+  // This prevents the heatmap data from being "new" on every render.
+  // This stops the map from destroying/re-creating the layer 60 times a second.
+  const heatmapPoints = useMemo(() => {
+    return airData.map(point => [
+      point.coordinates[0], // lat
+      point.coordinates[1], // lng
+      point.value           // intensity
+    ]);
+  }, [airData]);
 
   return (
     <div style={{ height: "100vh", width: "100vw", position: "relative" }}>
@@ -33,7 +54,7 @@ export default function MapPage() {
         </div>
       )}
 
-      <MapContainer center={centerPos} zoom={12} style={{ height: "100%", width: "100%" }}>
+      <MapContainer center={centerPos} zoom={6} style={{ height: "100%", width: "100%" }}>
         <TileLayer
           attribution='&copy; OpenStreetMap contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -46,42 +67,34 @@ export default function MapPage() {
           zIndex={1000}
         />
 
-        {airData.map((data, index) => {
-          // V3: Top level object has 'value' and 'coordinates' directly
-          const val = data.value;
-          const lat = data.coordinates.latitude;
-          const lng = data.coordinates.longitude;
+        {/* Render Heatmap only if we have data */}
+        {heatmapPoints.length > 0 && <HeatmapLayer points={heatmapPoints} />}
 
-          if (val === null || !lat || !lng) return null;
+        {/* --- FIX 2: Unique Keys --- */}
+        {airData.map((point, index) => (
+          <CircleMarker 
+            // Use point.id if available, otherwise fallback to index.
+            // This fixes the "Each child in a list should have a unique key" warning.
+            key={point.id || index} 
+            center={point.coordinates} 
+            radius={5} 
+            pathOptions={{ 
+              color: 'white', 
+              weight: 1,
+              fillColor: getAQIColor(point.value), 
+              fillOpacity: 0.9 
+            }}
+          >
+            <Popup>
+              <div style={{ textAlign: 'center' }}>
+                <strong>{point.location}</strong>
+                <br />
+                PM2.5: <b>{point.value}</b> µg/m³
+              </div>
+            </Popup>
+          </CircleMarker>
+        ))}
 
-          return (
-            <CircleMarker
-              key={data.sensorsId || index} // V3 uses sensorsId
-              center={[lat, lng]}
-              pathOptions={{
-                color: 'white',
-                weight: 1,
-                fillColor: getAQIColor(val),
-                fillOpacity: 0.8
-              }}
-              radius={12}
-            >
-              <Popup>
-                <div style={{ textAlign: "center" }}>
-                  <strong>Sensor ID: {data.sensorsId}</strong>
-                  <br />
-                  <span style={{ fontSize: "1.2rem", fontWeight: "bold", color: getAQIColor(val) }}>
-                    {val} µg/m³
-                  </span>
-                  <br />
-                  <span style={{ fontSize: "0.8rem", color: "#666" }}>
-                    PM2.5
-                  </span>
-                </div>
-              </Popup>
-            </CircleMarker>
-          );
-        })}
       </MapContainer>
     </div>
   );
