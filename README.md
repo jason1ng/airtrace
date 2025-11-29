@@ -44,7 +44,7 @@ The application combines multiple data sources to provide a comprehensive air qu
 
 ## Attribution and Credits
 
-This project is built upon the work of several excellent open-source projects and utilizes data from external API providers. We extend our gratitude to them:
+This project is built upon the work of several excellent open-source data sets and utilizes data from external API providers. We extend our gratitude to them:
 
 ### Data & Services
 * **Air Quality Data:** Provided by the **[World Air Quality Index Project (AQICN)](https://aqicn.org/)**.
