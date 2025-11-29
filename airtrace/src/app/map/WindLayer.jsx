@@ -124,6 +124,26 @@ const WindLayer = ({ show }) => {
   // Show loading indicator (optional)
   if (isLoading && show) {
     console.log('Loading wind data...');
+    return (
+      <div
+        // Style to position the indicator centrally at the top of the map
+        style={{
+          position: "absolute",
+          top: "20px",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 9999, // Ensure it's above other map elements
+          background: "rgba(255, 255, 255, 0.9)", // Semi-transparent background
+          padding: "10px 20px",
+          borderRadius: "20px",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
+          fontWeight: "bold",
+          color: "#0C2B4E", // Using a dominant color from MapPage.jsx for consistency
+        }}
+      >
+        🌬️ Loading Wind Data...
+      </div>
+    )
   }
 
   return null;
